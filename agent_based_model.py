@@ -77,24 +77,23 @@ class Utility(object):
         'suspicious': '0.5' }
     # -- end TODO
     '''
+
     @staticmethod
     def get_params():
         NUM_AGENTS_PER_TYPE = {
             'normal': 1000,
-            'suspicious': 10,
-        }
+            'suspicious': 10, }
 
+        # these are send, rcv pairs 
         AGENT_TYPE_PAIR_PROBS = {
-            # these are send probabilities
             'normal': {
                 'self': 0.9,
-                'suspicious': 0.1
-            },
+                'suspicious': 0.1 },
             'suspicious': {
                 'self': 0.7,
                 'normal': 0.3
-            }
-        }
+            } }
+
         MEAN_TXN_HRS = {'normal': 14,
                         'suspicious': 22}
 
@@ -102,8 +101,7 @@ class Utility(object):
                             'suspicious': 50}  # this shoudl actually vary...
 
         MEAN_NUM_TXNS = { 'normal': 4, 
-                          'suspicious': 10
-        }
+                          'suspicious': 10 }
         MINS_PER_STEP = 15
 
         parameters = {
@@ -437,3 +435,58 @@ if __name__ == '__main__':
     print('done')
        
     #print(Utility.timestep_to_time(12))
+
+    # --- define parameters
+    NUM_AGENTS_PER_TYPE = {
+        'normal': 1000,
+        'suspicious': 10, }
+
+    # these are send, rcv pairs 
+    AGENT_TYPE_PAIR_PROBS = {
+        'normal': {
+            'self': 0.9,
+            'suspicious': 0.1 },
+        'suspicious': {
+            'self': 0.7,
+            'normal': 0.3
+        } }
+
+    MEAN_TXN_HRS = {'normal': 14,
+                    'suspicious': 22}
+
+    MEAN_TXN_AMOUNTS = {'normal': 250,
+                        'suspicious': 50}  # this shoudl actually vary...
+
+    MEAN_NUM_TXNS = { 'normal': 4, 
+                      'suspicious': 10 }
+    MINS_PER_STEP = 15
+
+    parameters = {
+        'mean_num_txns': MEAN_NUM_TXNS,
+        'mean_txn_amounts': MEAN_TXN_AMOUNTS,
+        'num_agents_per_type': NUM_AGENTS_PER_TYPE,
+        'agent_type_pair_probs': AGENT_TYPE_PAIR_PROBS,
+        'mean_txn_hrs': MEAN_TXN_HRS,
+        'mean_txn_amounts ': MEAN_TXN_AMOUNTS,
+        'mean_txns': 4,  # avg num txns each agent makes
+        'starting_balance': 100,
+        'seed': 42,
+        'mins_per_step': MINS_PER_STEP,  # 1 hr
+        'steps': int(24 * (60/MINS_PER_STEP)),  # 24 hours * steps per hr
+    }
+
+#    'population': ap.IntRange(100, 1000),
+#    'infection_chance': ap.Range(0.1, 1.),
+
+    parameters_multi = dict(parameters)
+    parameters_multi.update({
+        'want_similar': ap.Values(0,0.125, 0.25, 0.375, 0.5, 0.625),
+            'density': ap.Values(0.5, 0.7, 0.95),
+        })
+    sample = ap.Sample(parameters_multi)
+
+    exp = ap.Experiment(BankModel, sample, iterations=1)
+    results = exp.run()
+
+
+    results.save()
