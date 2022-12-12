@@ -323,13 +323,11 @@ def process_data(model):
 
 
 def viz_data(df):
-    fig, ax = plt.subplots(figsize=(15,8))
+    fig, ax = plt.subplots()
     sns.lineplot(x='send_txn_times', y='num_txns', data=df, ax=ax,
         markers=True,  marker='o')
     # --
     # format
-    sns.set_style('whitegrid')
-    sns.set_context('poster')
     parameters = Utility.get_params()
     ax.set(xlabel='Time (24 Hour)', ylabel='# of Transactions',
     # add title
@@ -341,10 +339,14 @@ def viz_data(df):
         )
 
     #
+    ax.set_xticklabels(ax.get_xticks(), rotation = 50)
     ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
     ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
     ax.xaxis.set_major_formatter(DateFormatter("%H:%M"))
-    plt.show()
+    plt.tight_layout()
+    fig.savefig('plot.pdf') # This is just to show the figure is still generated
+    #plt.show()
+    return fig
 
 def viz_network(model):
     all_txns_2 = []
@@ -418,12 +420,17 @@ def network_viz(G):
 
 
 # ------------Experiment
-def run_exp():
+def run_exp(viz=False):
     model = BankModel(Utility.get_params())
     results = model.run()
     print('sanity check, agent 0s txns', model.agents[0].txns)
     #display.display('sanity check, agent 0s txns', model.agents[0].txns)
-    return model, results
+    if viz:
+        df = process_data(model)
+        print('viz data')
+        fig = viz_data(df) 
+        print('done')
+    return fig, model, results
 
 
 # ---------------------------------------------------------------------------
