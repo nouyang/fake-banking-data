@@ -15,10 +15,10 @@ import matplotlib.dates as mdates
 import networkx as nx
 
 DEBUG = False
+#from IPython import display 
 
 
 class Utility(object):
-    DEBUG = False
 
     @staticmethod
     def setup_p_txns(total_steps):
@@ -62,29 +62,27 @@ class Utility(object):
         new_time = date_and_time + time_change
         return new_time
 
+    # TODO
+    # -- other
+    # set up agent type txn
+    #     'network_randomness': 0.5
+    #     'number_of_neighbors': 2,
+    '''
+    # -- TODO
+    AGENT_TYPE_INIT_NUM_FRIENDS = {  # i guess... number of neighbors ... but ...
+        'normal': '5',
+        'suspicious': '2' }
+    AGENT_TYPE_MAKE_NEW_FRIENDS = {
+        'normal': '0.5',
+        'suspicious': '0.5' }
+    # -- end TODO
+    '''
     @staticmethod
     def get_params():
         NUM_AGENTS_PER_TYPE = {
             'normal': 1000,
             'suspicious': 10,
         }
-        # -- other
-        # set up agent type txn
-        #     'network_randomness': 0.5
-        #     'number_of_neighbors': 2,
-        '''
-        # -- TODO
-        AGENT_TYPE_INIT_NUM_FRIENDS = {  # i guess... number of neighbors ... but ...
-            'normal': '5',
-            'suspicious': '2'
-        }
-
-        AGENT_TYPE_MAKE_NEW_FRIENDS = {
-            'normal': '0.5',
-            'suspicious': '0.5'
-        }
-        # -- end TODO
-        '''
 
         AGENT_TYPE_PAIR_PROBS = {
             # these are send probabilities
@@ -100,15 +98,13 @@ class Utility(object):
         MEAN_TXN_HRS = {'normal': 14,
                         'suspicious': 22}
 
-        MINS_PER_STEP = 15
-
         MEAN_TXN_AMOUNTS = {'normal': 250,
                             'suspicious': 50}  # this shoudl actually vary...
 
-        MEAN_NUM_TXNS = {
-            'normal': 4,
-            'suspicious': 10
+        MEAN_NUM_TXNS = { 'normal': 4, 
+                          'suspicious': 10
         }
+        MINS_PER_STEP = 15
 
         parameters = {
             'mean_num_txns': MEAN_NUM_TXNS,
@@ -124,12 +120,6 @@ class Utility(object):
             'steps': int(24 * (60/MINS_PER_STEP)),  # 24 hours * steps per hr
         }
         return parameters
-
-
-# %% [markdown]
-# # agent
-
-# %%
 
 
 class BankAgent(ap.Agent):
@@ -284,21 +274,6 @@ class BankModel(ap.Model):
             agent.cleanup()
 
 
-# ------------Experiment
-def run_exp():
-    # https://github.com/JoelForamitti/agentpy/blob/master/tests/test_sequences.py
-    tmp_model = BankModel()
-    agents = ap.AgentList(tmp_model, 10, BankAgent)
-    agents.random(5).type = 'test'
-    agents.id
-    for agent in agents:
-        print(agent.id, agent.type)
-    agents.select(agents.type == 'test').random().id
-
-    model = BankModel(Utility.get_params())
-    results = model.run()
-    return results
-
 
 def debug_printouts():
     DEBUG = False
@@ -319,9 +294,146 @@ def debug_printouts():
         # for agent in model.agents:
         # print(agent.txns)
     # display(model.agents[0].txns)
+    # https://github.com/JoelForamitti/agentpy/blob/master/tests/test_sequences.py
+    tmp_model = BankModel()
+    agents = ap.AgentList(tmp_model, 10, BankAgent)
+    agents.random(5).type = 'test'
+    agents.id
+    for agent in agents:
+        print(agent.id, agent.type)
+    agents.select(agents.type == 'test').random().id
+
+    model = BankModel(Utility.get_params())
+    results = model.run()
+    return results
+
+
+    
+def process_data(model):
+    all_txns = []
+    for agent in model.agents:
+        for timestamp in agent.send_txn_times:
+            all_txns.append(Utility.timestep_to_time(timestamp))
+    all_txns = pd.DataFrame( all_txns, columns=['send_txn_times' ])
+    all_txns.index = all_txns.send_txn_times
+    #resampled = all_txns.send_txn_times.resample('15Min')#.count().plot()
+    resampled = all_txns.send_txn_times.resample('1H')
+    df = pd.DataFrame(resampled.count())
+    df.columns=['num_txns']
+    df['labels'] = pd.to_datetime(df.index).strftime('%H:%M')
+    return df
+
+
+def viz_data(df):
+    fig, ax = plt.subplots(figsize=(15,8))
+    sns.lineplot(x='send_txn_times', y='num_txns', data=df, ax=ax,
+        markers=True,  marker='o')
+    # --
+    # format
+    sns.set_style('whitegrid')
+    sns.set_context('poster')
+    parameters = Utility.get_params()
+    ax.set(xlabel='Time (24 Hour)', ylabel='# of Transactions',
+    # add title
+    title=r"$\bf{Simulated\ Transactions\ by\ Time–of–Day}$"
+        f"\n# Accounts, Normal: {parameters['num_agents_per_type']['normal']}, "
+        f"Suspicious: {parameters['num_agents_per_type']['suspicious']}\n"
+        f"Mean txn time, Normal: {parameters['mean_txn_hrs']['normal']}:00,"
+        f" Suspicious: {parameters['mean_txn_hrs']['suspicious']}:00"
+        )
+
+    #
+    ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+    ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
+    ax.xaxis.set_major_formatter(DateFormatter("%H:%M"))
+    plt.show()
+
+def viz_network(model):
+    all_txns_2 = []
+    for agent in model.agents:
+        sends = agent.txns[agent.txns['txn_type'] == 'send']
+        all_txns_2.append(sends)
+
+    df_2 = pd.concat(all_txns_2)
+    edges_list = df_2[['sender_id', 'receiver_id']].to_numpy()
+
+    G=nx.DiGraph()
+    G.add_edges_from(edges_list)
+    print('num nodes', G.number_of_nodes())
+    print('num edges', G.number_of_edges())
+
+    counts = df_2[['sender_type', 'receiver_type', 'sender_id']]
+    counts = counts.groupby('sender_id').value_counts()
+    counts = counts.reset_index()
+    counts = counts.rename(columns={0:'value_count'})
+
+    counts.groupby(['sender_type', 'receiver_type']).sum().apply(np.average)
+    # %% [markdown]
+    # # confirm that pairs parnters are distributed correctly
+    # normal-normal should be greater than normal-suspicious, etc.
+    pair_cts = {}
+    for s_type in counts.sender_type.unique():
+        pair_cts[s_type] = {}
+        for r_type in counts.receiver_type.unique():
+            tmp = counts[(counts.sender_type == s_type) & (counts.receiver_type == r_type)]
+            pair_cts[s_type][r_type] = np.average(tmp['value_count'])
+    pair_cts = pd.DataFrame(pair_cts)
+
+    df_2['timestep_to_time'] = df_2['timestep'].apply(Utility.timestep_to_time)
+
+    # -- Export data!
+    tabular_data = df_2[['timestep', 'timestep_to_time', 'sender_id',
+                         'receiver_id', 'sender_type', 'amount'] ]
+    tabular_data.to_csv('txns_list.csv', index=False)
+
+
+    # -- Export more data!
+    df_2[['sender_id',
+          'sender_type']].drop_duplicates('sender_id').to_csv('agents_list.csv',
+                                                              index=False)
+
+    # -- Yet more data!
+    df_out_deg = pd.DataFrame(G.out_degree(), columns=['node_id', 'out_degree'])
+    df_in_deg = pd.DataFrame(G.in_degree(), columns=['node_id', 'in_degree'])
+    df_degs = pd.merge(df_in_deg, df_out_deg, on='node_id' )
+    df_degs.to_csv(
+        'tabular_graph_features.csv', index=False)
+
+    # -- Final data export!
+    df_2[['sender_id',
+          'sender_type']].drop_duplicates('sender_id').to_csv('agents_list.csv',
+                                                              index=False)
+
+def network_viz(G):
+    colors = []
+    for i in range(len(G.nodes())):
+        acct_type = model.agents[i].type
+        G.nodes[i+1]['type'] =  model.agents[i].type
+        if acct_type == 'normal' :
+            colors.append('white')
+        else:
+            colors.append('red')
+    plt.subplots()
+    nx.draw(G, with_labels = True, node_color = colors, pos=nx.shell_layout(G))
+    #nx.draw(G.nodes['type'] =  model.agents[i].type # todo: select by type?
+    plt.show()
+
+
+# ------------Experiment
+def run_exp():
+    model = BankModel(Utility.get_params())
+    results = model.run()
+    print('sanity check, agent 0s txns', model.agents[0].txns)
+    #display.display('sanity check, agent 0s txns', model.agents[0].txns)
+    return model, results
 
 
 # ---------------------------------------------------------------------------
 if __name__ == '__main__':
-    run_exp()
-    print(Utility.timestep_to_time(12))
+    model, results = run_exp()
+    df = process_data(model)
+    print('viz data')
+    viz_data(df) 
+    print('done')
+       
+    #print(Utility.timestep_to_time(12))
