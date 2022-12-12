@@ -55,7 +55,7 @@ class Utility(object):
 
     @staticmethod
     def timestep_to_time(timestep):
-        parameters = Utility.get_params()
+        parameters = Utility.get_default_params()
         date_and_time = datetime.datetime(2022, 10, 31, 0, 0, 0)
         time_elapsed = timestep * (parameters['mins_per_step'])
         time_change = datetime.timedelta(minutes=time_elapsed)
@@ -79,7 +79,7 @@ class Utility(object):
     '''
 
     @staticmethod
-    def get_params():
+    def get_default_params():
         NUM_AGENTS_PER_TYPE = {
             'normal': 1000,
             'suspicious': 10, }
@@ -140,9 +140,11 @@ class BankAgent(ap.Agent):
         self.txn_amts = None
 
     def setup_txn_amts(self, mean=0, stddev=1, total_steps=0):
+        #print('total steps', total_steps)
         self.txn_amts = self.txn_amt_rng.normal(
             loc=mean, scale=stddev,
-            size=total_steps)
+            size=self.total_steps)
+        #print(self.txn_amts)
         self.txn_amts = np.abs(self.txn_amts)
 
     # NOTE: Timesteps start at 1 # TODO: fix bug. where first timestep should be at midnight.
@@ -202,8 +204,13 @@ class BankAgent(ap.Agent):
 
 
 class BankModel(ap.Model):
+
     def setup(self):
         self.p_txns = Utility.setup_p_txns(self.p.steps)
+        # NOTE: hackish workaround for now to get % as since var
+        self.p.num_agents_per_type['suspicious'] = \
+            int(self.p.num_agents_per_type['normal'] * self.p.percent_sus)
+
         num_agents = sum(self.p.num_agents_per_type.values())
 
         # Setup up rng to generate seeds for rngs for agents
@@ -211,8 +218,11 @@ class BankModel(ap.Model):
         agent_rng_seeds = rng.random(num_agents).round(3) * 1000
         agent_rng_seeds = np.array(agent_rng_seeds, dtype=int)
 
-        self.agents = ap.AgentList(self)
+        self.agents = ap.AgentList(self) # empty list 
 
+
+        print(self.p.num_agents_per_type)
+        
         # -- shift the probabilitiy tables
         for type in ['normal', 'suspicious']:
             hrs_mean = self.p.mean_txn_hrs[type]
@@ -272,7 +282,7 @@ class BankModel(ap.Model):
             agent.cleanup()
 
 
-
+'''
 def debug_printouts():
     DEBUG = False
     with np.printoptions(precision=3, suppress=True):
@@ -301,10 +311,10 @@ def debug_printouts():
         print(agent.id, agent.type)
     agents.select(agents.type == 'test').random().id
 
-    model = BankModel(Utility.get_params())
+    model = BankModel(Utility.get_default_params())
     results = model.run()
     return results
-
+'''
 
     
 def process_data(model):
@@ -321,14 +331,13 @@ def process_data(model):
     df['labels'] = pd.to_datetime(df.index).strftime('%H:%M')
     return df
 
-
 def viz_data(df):
     fig, ax = plt.subplots()
     sns.lineplot(x='send_txn_times', y='num_txns', data=df, ax=ax,
         markers=True,  marker='o')
     # --
     # format
-    parameters = Utility.get_params()
+    parameters = Utility.get_default_params()
     ax.set(xlabel='Time (24 Hour)', ylabel='# of Transactions',
     # add title
     title=r"$\bf{Simulated\ Transactions\ by\ Time–of–Day}$"
@@ -338,8 +347,7 @@ def viz_data(df):
         f" Suspicious: {parameters['mean_txn_hrs']['suspicious']}:00"
         )
 
-    #
-    ax.set_xticklabels(ax.get_xticks(), rotation = 50)
+    ax.set_xticklabels(ax.get_xticks(), rotation = 40)
     ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
     ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
     ax.xaxis.set_major_formatter(DateFormatter("%H:%M"))
@@ -419,34 +427,12 @@ def network_viz(G):
     plt.show()
 
 
-# ------------Experiment
-def run_exp(viz=False):
-    model = BankModel(Utility.get_params())
-    results = model.run()
-    print('sanity check, agent 0s txns', model.agents[0].txns)
-    #display.display('sanity check, agent 0s txns', model.agents[0].txns)
-    if viz:
-        df = process_data(model)
-        print('viz data')
-        fig = viz_data(df) 
-        print('done')
-    return fig, model, results
-
-
-# ---------------------------------------------------------------------------
-if __name__ == '__main__':
-    model, results = run_exp()
-    df = process_data(model)
-    print('viz data')
-    viz_data(df) 
-    print('done')
-       
-    #print(Utility.timestep_to_time(12))
-
-    # --- define parameters
+# --- define parameters
+def run_exp(viz=False): 
     NUM_AGENTS_PER_TYPE = {
         'normal': 1000,
-        'suspicious': 10, }
+        # 'suspicious': 10, 
+    }
 
     # these are send, rcv pairs 
     AGENT_TYPE_PAIR_PROBS = {
@@ -480,20 +466,56 @@ if __name__ == '__main__':
         'seed': 42,
         'mins_per_step': MINS_PER_STEP,  # 1 hr
         'steps': int(24 * (60/MINS_PER_STEP)),  # 24 hours * steps per hr
+# hardcode, since can't give combo of options between the two
+        'percent_sus': 1/100,
     }
 
-#    'population': ap.IntRange(100, 1000),
-#    'infection_chance': ap.Range(0.1, 1.),
+    model = BankModel(parameters)
 
-    parameters_multi = dict(parameters)
-    parameters_multi.update({
-        'want_similar': ap.Values(0,0.125, 0.25, 0.375, 0.5, 0.625),
-            'density': ap.Values(0.5, 0.7, 0.95),
-        })
-    sample = ap.Sample(parameters_multi)
+    results = model.run()
+    print('sanity check, agent 0s txns', model.agents[0].txns)
+    #display.display('sanity check, agent 0s txns', model.agents[0].txns)
+    if viz:
+        df = process_data(model)
+        print('viz data')
+        fig = viz_data(df) 
+        print('done')
 
-    exp = ap.Experiment(BankModel, sample, iterations=1)
-    results = exp.run()
+        return fig, model, results
+    return model, results
+
+    #parameters_multi = dict(parameters)
+    #parameters_multi.update({
+    #    'percent_sus': ap.Values(10, 1, 0.1),
+    #    })
+    #sample = ap.Sample(parameters_multi)
+
+    #exp = ap.Experiment(BankModel, sample, iterations=1)
+    #return exp
+    #results = exp.run()
+    #results.save()
+   
+# ------------Experiment
+def run_model(viz=False):
+    model = BankModel(Utility.get_default_params())
+    results = model.run()
+    print('sanity check, agent 0s txns', model.agents[0].txns)
+    #display.display('sanity check, agent 0s txns', model.agents[0].txns)
+    if viz:
+        df = process_data(model)
+        print('viz data')
+        fig = viz_data(df) 
+        print('done')
+    return fig, model, results
 
 
-    results.save()
+# ---------------------------------------------------------------------------
+if __name__ == '__main__':
+    run_exp()
+    #model, results = run_model()
+    df = process_data(model)
+    print('viz data')
+    viz_data(df) 
+    print('done')
+       
+    #print(Utility.timestep_to_time(12))
