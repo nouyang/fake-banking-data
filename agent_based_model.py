@@ -1,6 +1,7 @@
 # Model design
 import agentpy as ap
 import numpy as np
+from frozendict import frozendict
 
 # Visualization
 import seaborn as sns
@@ -56,7 +57,7 @@ class Utility(object):
     @staticmethod
     def timestep_to_time(timestep):
         parameters = Utility.get_default_params()
-        date_and_time = datetime.datetime(2022, 10, 31, 0, 0, 0)
+        date_and_time = datetime.datetime(2022, 10, 31, 0, 0,)
         time_elapsed = timestep * (parameters['mins_per_step'])
         time_change = datetime.timedelta(minutes=time_elapsed)
         new_time = date_and_time + time_change
@@ -77,13 +78,39 @@ class Utility(object):
         'suspicious': '0.5' }
     # -- end TODO
     '''
+    #--- HACK
+    @staticmethod
+    def flatten_params(params):
+        # cannot use Exp uless we take out dictionaries, 
+        # due to bug in how parametes for ea. exp are stored
+        # flatten for experiment; unflatten at actual model
+        parameters = {
+            'mean_num_txns': MEAN_NUM_TXNS,
+            'mean_txn_amounts': MEAN_TXN_AMOUNTS,
+            'num_agents_per_type': NUM_AGENTS_PER_TYPE,
+            'agent_type_pair_probs': AGENT_TYPE_PAIR_PROBS,
+            'mean_txn_hrs': MEAN_TXN_HRS,
+            'mean_txn_amounts': MEAN_TXN_AMOUNTS,
+            'mean_txns': 4,  # avg num txns each agent makes
+            'starting_balance': 100,
+            'seed': 42,
+            'mins_per_step': MINS_PER_STEP,  # 1 hr
+            'steps': int(24 * (60/MINS_PER_STEP)),  # 24 hours * steps per hr
+        }
+        # NOTE: TMEPORARY: for debugging
+        #parameters['percent_sus'] = 0.01
+        return f_params 
+
+    @staticmethod
+    def unflatten_params(f_params):
+        pass
+
 
     @staticmethod
     def get_default_params():
         NUM_AGENTS_PER_TYPE = {
             'normal': 1000,
             'suspicious': 10, }
-
         # these are send, rcv pairs 
         AGENT_TYPE_PAIR_PROBS = {
             'normal': {
@@ -93,13 +120,10 @@ class Utility(object):
                 'self': 0.7,
                 'normal': 0.3
             } }
-
         MEAN_TXN_HRS = {'normal': 14,
                         'suspicious': 22}
-
         MEAN_TXN_AMOUNTS = {'normal': 250,
                             'suspicious': 50}  # this shoudl actually vary...
-
         MEAN_NUM_TXNS = { 'normal': 4, 
                           'suspicious': 10 }
         MINS_PER_STEP = 15
@@ -116,7 +140,11 @@ class Utility(object):
             'seed': 42,
             'mins_per_step': MINS_PER_STEP,  # 1 hr
             'steps': int(24 * (60/MINS_PER_STEP)),  # 24 hours * steps per hr
+            'percent_sus':0.01
         }
+        print(parameters)
+        # NOTE: TMEPORARY: for debugging
+        #parameters['percent_sus'] = 0.01
         return parameters
 
 
@@ -207,6 +235,10 @@ class BankModel(ap.Model):
 
     def setup(self):
         self.p_txns = Utility.setup_p_txns(self.p.steps)
+        print('setting up')
+        print('\n\n!------ self.p')
+        print(self.p)
+        # for experiment, vary percent suspicious
         # NOTE: hackish workaround for now to get % as since var
         self.p.num_agents_per_type['suspicious'] = \
             int(self.p.num_agents_per_type['normal'] * self.p.percent_sus)
@@ -219,8 +251,6 @@ class BankModel(ap.Model):
         agent_rng_seeds = np.array(agent_rng_seeds, dtype=int)
 
         self.agents = ap.AgentList(self) # empty list 
-
-
         print(self.p.num_agents_per_type)
         
         # -- shift the probabilitiy tables
@@ -426,9 +456,8 @@ def network_viz(G):
     #nx.draw(G.nodes['type'] =  model.agents[i].type # todo: select by type?
     plt.show()
 
-
 # --- define parameters
-def run_exp(viz=False): 
+def run_custom_exp(viz=False): 
     NUM_AGENTS_PER_TYPE = {
         'normal': 1000,
         # 'suspicious': 10, 
@@ -454,13 +483,15 @@ def run_exp(viz=False):
                       'suspicious': 10 }
     MINS_PER_STEP = 15
 
-    parameters = {
+
+    parameters_exp = {
         'mean_num_txns': MEAN_NUM_TXNS,
         'mean_txn_amounts': MEAN_TXN_AMOUNTS,
-        'num_agents_per_type': NUM_AGENTS_PER_TYPE,
         'agent_type_pair_probs': AGENT_TYPE_PAIR_PROBS,
         'mean_txn_hrs': MEAN_TXN_HRS,
         'mean_txn_amounts ': MEAN_TXN_AMOUNTS,
+        'num_agents_per_type': NUM_AGENTS_PER_TYPE,
+        'num_agents_per_type': 4, 
         'mean_txns': 4,  # avg num txns each agent makes
         'starting_balance': 100,
         'seed': 42,
@@ -470,33 +501,50 @@ def run_exp(viz=False):
         'percent_sus': 1/100,
     }
 
-    model = BankModel(parameters)
+    print('pre frezze')
+    print(type(parameters_exp['MEAN_TXN_HRS']))
+    for param in [
+            'NUM_AGENTS_PER_TYPE', 
+            'AGENT_TYPE_PAIR_PROBS', 
+            'MEAN_TXN_HRS', 
+            'MEAN_TXN_AMOUNTS', 
+            'MEAN_NUM_TXNS']:
+        parameters_exp[param] = frozendict(parameters_exp[param])
+    print(type(parameters_exp[MEAN_TXN_HRS]))
 
-    results = model.run()
-    print('sanity check, agent 0s txns', model.agents[0].txns)
-    #display.display('sanity check, agent 0s txns', model.agents[0].txns)
+    #-----------------------------------------------------------
+    # --- NOTE: Setting experiment here! 
+    #parameters_multi['percent_sus'] = ap.Values(10, 1, 0.1)
+    print('parameters sweep; ', parameters_exp,
+          parameters_exp['percent_sus'])
+    sample = ap.Sample(parameters_exp) # grid search, each repeat 1x
+    print('created sample; ', sample)
+
+    # -- TEMP TEST 
+    #model = BankModel(parameters_multi)
+    #model = BankModel(Utility.get_default_params())
+    #results = model.run()
+    #print('finished test run with default params')
+
+    exp = ap.Experiment(BankModel, parameters_exp)
+    #exp = ap.Experiment(BankModel, Utility.get_default_params())
+    #print('created exp; ', exp)
+
+    #return exp
+    results = exp.run()
+    print('ran exp; ', results)
+    #results.save()
+
     if viz:
         df = process_data(model)
         print('viz data')
         fig = viz_data(df) 
         print('done')
 
-        return fig, model, results
-    return model, results
-
-    #parameters_multi = dict(parameters)
-    #parameters_multi.update({
-    #    'percent_sus': ap.Values(10, 1, 0.1),
-    #    })
-    #sample = ap.Sample(parameters_multi)
-
-    #exp = ap.Experiment(BankModel, sample, iterations=1)
-    #return exp
-    #results = exp.run()
-    #results.save()
+    return fig, model, results
    
 # ------------Experiment
-def run_model(viz=False):
+def run_default_model(viz=False):
     model = BankModel(Utility.get_default_params())
     results = model.run()
     print('sanity check, agent 0s txns', model.agents[0].txns)
@@ -508,14 +556,11 @@ def run_model(viz=False):
         print('done')
     return fig, model, results
 
-
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------
 if __name__ == '__main__':
     run_exp()
-    #model, results = run_model()
+    #model, results = run_default_model()
     df = process_data(model)
     print('viz data')
     viz_data(df) 
     print('done')
-       
-    #print(Utility.timestep_to_time(12))
