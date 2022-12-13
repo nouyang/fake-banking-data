@@ -98,7 +98,7 @@ class Utility(object):
     @staticmethod
     def unflatten_params(params):
         for key in ORNERY_KEYS:
-            print('unflattening key', key, params[key], 'of type', type(key))
+            #print('unflattening key', key, params[key], 'of type', type(key))
             params[key] = json.loads(params[key])
         return params
 
@@ -509,32 +509,30 @@ def run_custom_exp(viz=False):
     print('created sample; ', sample)
 
     # -- TEMP TEST 
-    if True:
+    if False:
         model = BankModel(parameters_exp)
         # or at least try default params
         # model = BankModel(Utility.get_default_params())
         results = model.run()
         print('finished test run with default params')
 
-    '''
     print('~---- treying to create exp')
     exp = ap.Experiment(BankModel, parameters_exp)
     print('created exp; ', exp)
-    '''
 
     #return exp
     results = exp.run()
     print('ran exp; ', results)
-    #results.save()
+    results.save()
 
+    fig = None 
+    model = None
     if viz:
         df = process_data(model)
         print('viz data')
         fig = viz_data(df) 
         print('done')
-
     return fig, model, results
-
    
 # ------------Experiment
 def run_default_model(viz=False):
