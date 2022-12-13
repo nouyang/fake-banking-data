@@ -28,8 +28,32 @@ ORNERY_KEYS = [ 'mean_num_txns',
 
 class Utility(object):
 
-    def format_param_for_apExperiment(): 
-        # parameters_with_dict_values
+    @staticmethod
+    def process_data_to_datetime(model):
+        all_txns = []
+        # TODO: refactor so apply to enitre df at once
+        for agent in model.agents:
+            for timestamp in agent.send_txn_times:
+                all_txns.append(Utility.timestep_to_time(timestamp))
+        all_txns = pd.DataFrame( all_txns, columns=['send_txn_times' ])
+        all_txns.index = all_txns.send_txn_times
+        #resampled = all_txns.send_txn_times.resample('15Min')#.count().plot()
+        resampled = all_txns.send_txn_times.resample('1H')
+        df = pd.DataFrame(resampled.count())
+        df.columns=['num_txns']
+        df['labels'] = pd.to_datetime(df.index).strftime('%H:%M')
+        return df
+
+    @staticmethod
+    # have to do this to go through the Experiment framework, 
+    # otherwise it chokes trying to save the paramters.
+    # So we flatten diciontaries to json string.
+    # Then, within each BankModel init, unflatten it before using as nomral
+    def get_formatted_param_for_apExperiment(param_changes=None,
+                                             flatten=True): 
+        # parma changes should be dict 
+        # TODO: add types fo fxn calls 
+        # parameters_with_dict_values'
         NUM_AGENTS_PER_TYPE = {
             'normal': 1000,
             # 'suspicious': 10, 
@@ -45,10 +69,8 @@ class Utility(object):
             } }
         MEAN_TXN_HRS = {'normal': 14,
                         'suspicious': 22}
-
         MEAN_TXN_AMOUNTS = {'normal': 250,
                             'suspicious': 50}  # this shoudl actually vary...
-
         MEAN_NUM_TXNS = { 'normal': 4, 
                           'suspicious': 10 }
         MINS_PER_STEP = 15
@@ -69,10 +91,17 @@ class Utility(object):
             'percent_sus': 1/100,
         }
 
-        parameters_exp = Utility.flatten_params(parameters_exp)
-            # print(parameters_exp[param])
-            # parameters_exp[param] = frozendict(parameters_exp[param])
-
+        if param_changes!= None:
+            print('\n\n!-- param changes', param_changes)
+            for key, value in param_changes.items():
+                print(f'{key}: modifying {parameters_exp[key]}->{value}')
+                parameters_exp[key] = value
+        if flatten:
+            # Flag so you can get non flattened params if desired
+            # E.g. for use in figure title texts
+            parameters_exp = Utility.flatten_params(parameters_exp)
+                # print(parameters_exp[param])
+                # parameters_exp[param] = frozendict(parameters_exp[param])
         #-----------------------------------------------------------
         # --- NOTE: Setting experiment here! 
         return parameters_exp
@@ -134,7 +163,7 @@ class Utility(object):
               'sender_type']].drop_duplicates('sender_id').to_csv('agents_list.csv',
                                                                   index=False)
 
-    def network_viz(G):
+    def network_viz(G, model):
         colors = []
         for i in range(len(G.nodes())):
             acct_type = model.agents[i].type
@@ -185,8 +214,8 @@ class Utility(object):
 
     @staticmethod
     def timestep_to_time(timestep):
-        mins_per_step = Utility.get_default_params()['mins_per_step']
-        date_and_time = datetime.datetime(2022, 10, 31, 0, 0,)
+        mins_per_step = Utility.get_default_params('mins_per_step')
+        date_and_time = datetime.datetime(2022, 10, 31, 0, 0,) # arbitrary date
         time_elapsed = timestep * (mins_per_step)
         time_change = datetime.timedelta(minutes=time_elapsed)
         new_time = date_and_time + time_change
@@ -227,7 +256,7 @@ class Utility(object):
         return params
 
     @staticmethod
-    def get_default_params():
+    def get_default_params(key=None):
         NUM_AGENTS_PER_TYPE = {
             'normal': 1000,
             'suspicious': 10, }
@@ -262,7 +291,8 @@ class Utility(object):
             'steps': int(24 * (60/MINS_PER_STEP)),  # 24 hours * steps per hr
             'percent_sus':0.01
         }
-        print(parameters)
+        if key is not None:
+            return parameters[key]
         return parameters
 
 
@@ -352,12 +382,9 @@ class BankAgent(ap.Agent):
 class BankModel(ap.Model):
 
     def setup(self):
-        print('unflattening')
         self.p = Utility.unflatten_params(self.p)
-
         self.p_txns = Utility.setup_p_txns(self.p.steps)
 
-        print('setting up')
         # for experiment, vary percent suspicious
         # NOTE: hackish workaround for now to get % as since var
         self.p.num_agents_per_type['suspicious'] = \
@@ -366,6 +393,7 @@ class BankModel(ap.Model):
         num_agents = sum(self.p.num_agents_per_type.values())
 
         # Setup up rng to generate seeds for rngs for agents
+
         rng = np.random.default_rng(self.p.seed)
         agent_rng_seeds = rng.random(num_agents).round(3) * 1000
         agent_rng_seeds = np.array(agent_rng_seeds, dtype=int)
@@ -395,10 +423,10 @@ class BankModel(ap.Model):
 
             self.agents += agents
 
-        if DEBUG:
-            print('here are all the agetns: ')
-            print(self.agents)
-            print([(agent.id, agent.type) for agent in self.agents])
+        #if DEBUG:
+            #print('here are all the agetns: ')
+            #print(self.agents)
+            #print([(agent.id, agent.type) for agent in self.agents])
 
         # -- calcuations for txn $$$ (each agent gets different seed)
         txn_amt_rngs = ap.AttrIter(
@@ -465,59 +493,112 @@ def debug_printouts():
     results = model.run()
     return results
 '''
-
     
-def process_data_to_datetime(model):
-    all_txns = []
-    for agent in model.agents:
-        for timestamp in agent.send_txn_times:
-            all_txns.append(Utility.timestep_to_time(timestamp))
-    all_txns = pd.DataFrame( all_txns, columns=['send_txn_times' ])
-    all_txns.index = all_txns.send_txn_times
-    #resampled = all_txns.send_txn_times.resample('15Min')#.count().plot()
-    resampled = all_txns.send_txn_times.resample('1H')
-    df = pd.DataFrame(resampled.count())
-    df.columns=['num_txns']
-    df['labels'] = pd.to_datetime(df.index).strftime('%H:%M')
-    return df
-
-def viz_txns_data(df):
-    '''
-    Input: df which has columns, send_txn_times, and num_txns
-    '''
-    fig, ax = plt.subplots()
-    sns.lineplot(x='send_txn_times', y='num_txns', data=df, ax=ax,
-        markers=True,  marker='o')
-    # --
-    # format
-    parameters = Utility.get_default_params()
-    ax.set(xlabel='Time (24 Hour)', ylabel='# of Transactions',
-    # add title
-    title=r"$\bf{Simulated\ Transactions\ by\ Time–of–Day}$"
-        f"\n# Accounts, Normal: {parameters['num_agents_per_type']['normal']}, "
-        f"Suspicious: {parameters['num_agents_per_type']['suspicious']}\n"
-        f"Mean txn time, Normal: {parameters['mean_txn_hrs']['normal']}:00,"
-        f" Suspicious: {parameters['mean_txn_hrs']['suspicious']}:00"
-        )
-
-    ax.set_xticklabels(ax.get_xticks(), rotation = 40)
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
-    ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
-    ax.xaxis.set_major_formatter(DateFormatter("%H:%M"))
-    plt.tight_layout()
-    fig.savefig('plot.pdf') # This is just to show the figure is still generated
-    #plt.show()
-    return fig
-
 class VizUtility(object): 
-    pass
+    @staticmethod
+    def format_fig_1():
+        sns.reset_defaults()
+        fig, (ax1, ax2) = plt.subplots(1,2,
+                                        figsize = (8,4))
+        sns.set_context('notebook')
+        sns.set_style('whitegrid')
+        fig.patch.set_facecolor('#F9F3DC')
+        return fig, (ax1, ax2)
+                
 
+    @staticmethod
+    def viz_fig_1(df1, df2, model1, model2):
+        '''
+        Input: df which has columns, send_txn_times, and num_txns
+        '''
+        fig, (ax1, ax2) = VizUtility.format_fig_1()
+        #parameters = Utility.get_formatted_param_for_apExperiment(flatten=False)
+
+        # -- 1
+        sns.lineplot(x='send_txn_times', y='num_txns', data=df1, ax=ax1,
+                     markers=True,  marker='o')
+
+        parameters = model1.p
+        ax1.set(xlabel='Time (24 Hour)', ylabel='# of Transactions',
+            title=f"Mean txn time, Normal: {parameters['mean_txn_hrs']['normal']}:00,"
+            f" Suspicious: {parameters['mean_txn_hrs']['suspicious']}:00"
+            )
+        ax1.set_xticklabels(ax1.get_xticks(), rotation = 40)
+        ax1.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+        ax1.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
+        ax1.xaxis.set_major_formatter(DateFormatter("%H:%M"))
+
+        # -- 2
+        sns.lineplot(x='send_txn_times', y='num_txns', data=df2, ax=ax2,
+            markers=True,  marker='o')
+
+        parameters = model2.p
+        ax2.set(xlabel='Time (24 Hour)', ylabel='# of Transactions',
+            title=f"Mean txn time, Normal: {parameters['mean_txn_hrs']['normal']}:00,"
+            f" Suspicious: {parameters['mean_txn_hrs']['suspicious']}:00"
+            )
+        ax2.set_xticklabels(ax2.get_xticks(), rotation = 40)
+        ax2.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+        ax2.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
+        ax2.xaxis.set_major_formatter(DateFormatter("%H:%M"))
+
+        plt.suptitle(r"$\bf{Simulated\ Transactions\ by\ Time–of–Day}$"
+            f"\n# Accounts, Normal: {parameters['num_agents_per_type']['normal']}, "
+            f"Suspicious: {parameters['num_agents_per_type']['suspicious']}")
+
+        plt.tight_layout()
+        fig.savefig('plot.pdf') # This is just to show the figure is still generated
+        #plt.show()
+        return fig
+
+
+
+'''
+fig, ax = plt.subplots()
+np.random.seed(123)
+sns.reset_defaults()
+#sns.set_theme(palette='viridis')
+sns.set_context('notebook')
+#sns.set_context('talk')
+sns.set_style('whitegrid')
+#sns.set(rc={'axes.facecolor':'palegoldenrod', 'figure.facecolor':'white'})
+sns.stripplot(data=txns, x='timestep', y='sender_type', hue='y_pred', edgecolor='k', linewidth=.2)#, palette='')
+fig.patch.set_facecolor('#F9F3DC')
+'''
 
 class BankExpsCollection(object):
 # --- define parameters
     @staticmethod
+    def gen_fig_1():
+        # run it twice, with different mean txn times
+        param_changes = {'mean_txn_hrs': {'normal': 12, 'suspicious': 22}}
+        paramsA = Utility.get_formatted_param_for_apExperiment(
+            param_changes)
+        paramsA['percent_sus'] = 1/50 
+        modelA = BankModel(paramsA)
+        results = modelA.run()
+        results.save()
+        txns_df_a = Utility.process_data_to_datetime(modelA)
+        
+        # cannot modify param directly.
+        # have to reformat, since we're changing a parameters that is a
+        # dictionary which breaks the Experiment code...
+        param_changes = {'mean_txn_hrs': {'normal': 17, 'suspicious': 22}}
+        paramsB = Utility.get_formatted_param_for_apExperiment(
+            param_changes)
+        paramsB['percent_sus'] = 1/50
+        modelB = BankModel(paramsB)
+        results = modelB.run()
+        txns_df_b = Utility.process_data_to_datetime(modelB)
+
+        #fig = viz_txns_data(df) 
+        fig = VizUtility.viz_fig_1(txns_df_a, txns_df_b, modelA, modelB)
+        return fig
+
+
+    @staticmethod
     def run_experiment(viz=False):
-        parameters_exp = Utility.format_param_for_apExperiment()
+        parameters_exp = Utility.get_formatted_param_for_apExperiment()
         parameters_exp['percent_sus'] = ap.Values(1/10, 1/100, 1/1000)
 
         sample = ap.Sample(parameters_exp) # grid search, each repeat 1x
@@ -557,11 +638,12 @@ class BankExpsCollection(object):
         print('sanity check, agent 0s txns', model.agents[0].txns)
         #display.display('sanity check, agent 0s txns', model.agents[0].txns)
         if viz:
-            df = process_data_to_datetime(model)
+            df = Utility.process_data_to_datetime(model)
             fig = viz_txns_data(df) 
         return fig, model, results
 
 # -------------------------------------------------------------
+
 if __name__ == '__main__':
     run_exp()
     #model, results = run_default_model()
