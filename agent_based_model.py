@@ -1,5 +1,6 @@
 # Model design
 import agentpy as ap
+import joblib
 import numpy as np
 from frozendict import frozendict
 import json
@@ -26,6 +27,129 @@ ORNERY_KEYS = [ 'mean_num_txns',
 
 
 class Utility(object):
+
+    def format_param_for_apExperiment(): 
+        # parameters_with_dict_values
+        NUM_AGENTS_PER_TYPE = {
+            'normal': 1000,
+            # 'suspicious': 10, 
+        }
+        # these are send, rcv pairs 
+        AGENT_TYPE_PAIR_PROBS = {
+            'normal': {
+                'self': 0.9,
+                'suspicious': 0.1 },
+            'suspicious': {
+                'self': 0.7,
+                'normal': 0.3
+            } }
+        MEAN_TXN_HRS = {'normal': 14,
+                        'suspicious': 22}
+
+        MEAN_TXN_AMOUNTS = {'normal': 250,
+                            'suspicious': 50}  # this shoudl actually vary...
+
+        MEAN_NUM_TXNS = { 'normal': 4, 
+                          'suspicious': 10 }
+        MINS_PER_STEP = 15
+
+        parameters_exp = {
+            'mean_num_txns': frozendict(MEAN_NUM_TXNS),
+            'mean_txn_amounts': frozendict(MEAN_TXN_AMOUNTS),
+            'agent_type_pair_probs': frozendict(AGENT_TYPE_PAIR_PROBS),
+            'mean_txn_hrs': frozendict(MEAN_TXN_HRS),
+            'mean_txn_amounts ': frozendict(MEAN_TXN_AMOUNTS),
+            'num_agents_per_type': frozendict(NUM_AGENTS_PER_TYPE),
+            'mean_txns': 4,  # avg num txns each agent makes
+            'starting_balance': 100,
+            'seed': 42,
+            'mins_per_step': MINS_PER_STEP,  # 1 hr
+            'steps': int(24 * (60/MINS_PER_STEP)),  # 24 hours * steps per hr
+# hardcode, since can't give combo of options between the two
+            'percent_sus': 1/100,
+        }
+
+        parameters_exp = Utility.flatten_params(parameters_exp)
+            # print(parameters_exp[param])
+            # parameters_exp[param] = frozendict(parameters_exp[param])
+
+        #-----------------------------------------------------------
+        # --- NOTE: Setting experiment here! 
+        return parameters_exp
+
+
+    def viz_and_export_network(model):
+        all_txns_2 = []
+        for agent in model.agents:
+            sends = agent.txns[agent.txns['txn_type'] == 'send']
+            all_txns_2.append(sends)
+
+        df_2 = pd.concat(all_txns_2)
+        edges_list = df_2[['sender_id', 'receiver_id']].to_numpy()
+
+        G=nx.DiGraph()
+        G.add_edges_from(edges_list)
+        print('num nodes', G.number_of_nodes())
+        print('num edges', G.number_of_edges())
+
+        counts = df_2[['sender_type', 'receiver_type', 'sender_id']]
+        counts = counts.groupby('sender_id').value_counts()
+        counts = counts.reset_index()
+        counts = counts.rename(columns={0:'value_count'})
+
+        counts.groupby(['sender_type', 'receiver_type']).sum().apply(np.average)
+        # %% [markdown]
+        # # confirm that pairs parnters are distributed correctly
+        # normal-normal should be greater than normal-suspicious, etc.
+        pair_cts = {}
+        for s_type in counts.sender_type.unique():
+            pair_cts[s_type] = {}
+            for r_type in counts.receiver_type.unique():
+                tmp = counts[(counts.sender_type == s_type) & (counts.receiver_type == r_type)]
+                pair_cts[s_type][r_type] = np.average(tmp['value_count'])
+        pair_cts = pd.DataFrame(pair_cts)
+
+        df_2['timestep_to_time'] = df_2['timestep'].apply(Utility.timestep_to_time)
+
+        # -- Export data!
+        tabular_data = df_2[['timestep', 'timestep_to_time', 'sender_id',
+                             'receiver_id', 'sender_type', 'amount'] ]
+        tabular_data.to_csv('txns_list.csv', index=False)
+
+
+        # -- Export more data!
+        df_2[['sender_id',
+              'sender_type']].drop_duplicates('sender_id').to_csv('agents_list.csv',
+                                                                  index=False)
+
+        # -- Yet more data!
+        df_out_deg = pd.DataFrame(G.out_degree(), columns=['node_id', 'out_degree'])
+        df_in_deg = pd.DataFrame(G.in_degree(), columns=['node_id', 'in_degree'])
+        df_degs = pd.merge(df_in_deg, df_out_deg, on='node_id' )
+        df_degs.to_csv(
+            'tabular_graph_features.csv', index=False)
+
+        # -- Final data export!
+        df_2[['sender_id',
+              'sender_type']].drop_duplicates('sender_id').to_csv('agents_list.csv',
+                                                                  index=False)
+
+    def network_viz(G):
+        colors = []
+        for i in range(len(G.nodes())):
+            acct_type = model.agents[i].type
+            G.nodes[i+1]['type'] =  model.agents[i].type
+            if acct_type == 'normal' :
+                colors.append('white')
+            else:
+                colors.append('red')
+        plt.subplots()
+        nx.draw(G, with_labels = True, node_color = colors, pos=nx.shell_layout(G))
+        #nx.draw(G.nodes['type'] =  model.agents[i].type # todo: select by type?
+        plt.show()
+
+
+
     @staticmethod
     def setup_p_txns(total_steps):
         # Mean at 0
@@ -234,8 +358,6 @@ class BankModel(ap.Model):
         self.p_txns = Utility.setup_p_txns(self.p.steps)
 
         print('setting up')
-        print('\n\n!------ self.p')
-        print(self.p)
         # for experiment, vary percent suspicious
         # NOTE: hackish workaround for now to get % as since var
         self.p.num_agents_per_type['suspicious'] = \
@@ -345,7 +467,7 @@ def debug_printouts():
 '''
 
     
-def process_data(model):
+def process_data_to_datetime(model):
     all_txns = []
     for agent in model.agents:
         for timestamp in agent.send_txn_times:
@@ -359,7 +481,10 @@ def process_data(model):
     df['labels'] = pd.to_datetime(df.index).strftime('%H:%M')
     return df
 
-def viz_data(df):
+def viz_txns_data(df):
+    '''
+    Input: df which has columns, send_txn_times, and num_txns
+    '''
     fig, ax = plt.subplots()
     sns.lineplot(x='send_txn_times', y='num_txns', data=df, ax=ax,
         markers=True,  marker='o')
@@ -384,168 +509,57 @@ def viz_data(df):
     #plt.show()
     return fig
 
-def viz_network(model):
-    all_txns_2 = []
-    for agent in model.agents:
-        sends = agent.txns[agent.txns['txn_type'] == 'send']
-        all_txns_2.append(sends)
-
-    df_2 = pd.concat(all_txns_2)
-    edges_list = df_2[['sender_id', 'receiver_id']].to_numpy()
-
-    G=nx.DiGraph()
-    G.add_edges_from(edges_list)
-    print('num nodes', G.number_of_nodes())
-    print('num edges', G.number_of_edges())
-
-    counts = df_2[['sender_type', 'receiver_type', 'sender_id']]
-    counts = counts.groupby('sender_id').value_counts()
-    counts = counts.reset_index()
-    counts = counts.rename(columns={0:'value_count'})
-
-    counts.groupby(['sender_type', 'receiver_type']).sum().apply(np.average)
-    # %% [markdown]
-    # # confirm that pairs parnters are distributed correctly
-    # normal-normal should be greater than normal-suspicious, etc.
-    pair_cts = {}
-    for s_type in counts.sender_type.unique():
-        pair_cts[s_type] = {}
-        for r_type in counts.receiver_type.unique():
-            tmp = counts[(counts.sender_type == s_type) & (counts.receiver_type == r_type)]
-            pair_cts[s_type][r_type] = np.average(tmp['value_count'])
-    pair_cts = pd.DataFrame(pair_cts)
-
-    df_2['timestep_to_time'] = df_2['timestep'].apply(Utility.timestep_to_time)
-
-    # -- Export data!
-    tabular_data = df_2[['timestep', 'timestep_to_time', 'sender_id',
-                         'receiver_id', 'sender_type', 'amount'] ]
-    tabular_data.to_csv('txns_list.csv', index=False)
+class VizUtility(object): 
+    pass
 
 
-    # -- Export more data!
-    df_2[['sender_id',
-          'sender_type']].drop_duplicates('sender_id').to_csv('agents_list.csv',
-                                                              index=False)
-
-    # -- Yet more data!
-    df_out_deg = pd.DataFrame(G.out_degree(), columns=['node_id', 'out_degree'])
-    df_in_deg = pd.DataFrame(G.in_degree(), columns=['node_id', 'in_degree'])
-    df_degs = pd.merge(df_in_deg, df_out_deg, on='node_id' )
-    df_degs.to_csv(
-        'tabular_graph_features.csv', index=False)
-
-    # -- Final data export!
-    df_2[['sender_id',
-          'sender_type']].drop_duplicates('sender_id').to_csv('agents_list.csv',
-                                                              index=False)
-
-def network_viz(G):
-    colors = []
-    for i in range(len(G.nodes())):
-        acct_type = model.agents[i].type
-        G.nodes[i+1]['type'] =  model.agents[i].type
-        if acct_type == 'normal' :
-            colors.append('white')
-        else:
-            colors.append('red')
-    plt.subplots()
-    nx.draw(G, with_labels = True, node_color = colors, pos=nx.shell_layout(G))
-    #nx.draw(G.nodes['type'] =  model.agents[i].type # todo: select by type?
-    plt.show()
-
-
+class BankExpsCollection(object):
 # --- define parameters
-def run_custom_exp(viz=False): 
-    NUM_AGENTS_PER_TYPE = {
-        'normal': 1000,
-        # 'suspicious': 10, 
-    }
-    # these are send, rcv pairs 
-    AGENT_TYPE_PAIR_PROBS = {
-        'normal': {
-            'self': 0.9,
-            'suspicious': 0.1 },
-        'suspicious': {
-            'self': 0.7,
-            'normal': 0.3
-        } }
-    MEAN_TXN_HRS = {'normal': 14,
-                    'suspicious': 22}
+    @staticmethod
+    def run_experiment(viz=False):
+        parameters_exp = Utility.format_param_for_apExperiment()
+        parameters_exp['percent_sus'] = ap.Values(1/10, 1/100, 1/1000)
 
-    MEAN_TXN_AMOUNTS = {'normal': 250,
-                        'suspicious': 50}  # this shoudl actually vary...
+        sample = ap.Sample(parameters_exp) # grid search, each repeat 1x
+        print('created sample; ', sample)
 
-    MEAN_NUM_TXNS = { 'normal': 4, 
-                      'suspicious': 10 }
-    MINS_PER_STEP = 15
+        # -- TEMP TEST 
+        if False:
+            model = BankModel(parameters_exp)
+            # or at least try default params
+            # model = BankModel(Utility.get_default_params())
+            results = model.run()
+            print('finished test run with default params')
 
-    parameters_exp = {
-        'mean_num_txns': frozendict(MEAN_NUM_TXNS),
-        'mean_txn_amounts': frozendict(MEAN_TXN_AMOUNTS),
-        'agent_type_pair_probs': frozendict(AGENT_TYPE_PAIR_PROBS),
-        'mean_txn_hrs': frozendict(MEAN_TXN_HRS),
-        'mean_txn_amounts ': frozendict(MEAN_TXN_AMOUNTS),
-        'num_agents_per_type': frozendict(NUM_AGENTS_PER_TYPE),
-        'mean_txns': 4,  # avg num txns each agent makes
-        'starting_balance': 100,
-        'seed': 42,
-        'mins_per_step': MINS_PER_STEP,  # 1 hr
-        'steps': int(24 * (60/MINS_PER_STEP)),  # 24 hours * steps per hr
-# hardcode, since can't give combo of options between the two
-        'percent_sus': 1/100,
-    }
+        exp = ap.Experiment(BankModel, parameters_exp)
+        print('created exp; ', exp)
 
-    parameters_exp = Utility.flatten_params(parameters_exp)
-        # print(parameters_exp[param])
-        # parameters_exp[param] = frozendict(parameters_exp[param])
+        results = exp.run()
+        print('ran exp; ', results)
+        joblib.dump(results,
+                    f"./results/{results.info['time_stamp'][:19]}.joblib")
+        # results.save() # 'TypeError: Object of type Values is not JSON serializable'
 
-    #-----------------------------------------------------------
-    # --- NOTE: Setting experiment here! 
-    #parameters_multi['percent_sus'] = ap.Values(10, 1, 0.1)
-    print('parameters sweep; ', parameters_exp,
-          parameters_exp['percent_sus'])
-    sample = ap.Sample(parameters_exp) # grid search, each repeat 1x
-    print('created sample; ', sample)
+        fig = None 
+        model = None
+        if viz:
+            df = process_data_to_datetime(model)
+            print('viz data')
+            fig = viz_txns_data(df) 
+            print('done')
+        return fig, model, results
+       
 
-    # -- TEMP TEST 
-    if False:
-        model = BankModel(parameters_exp)
-        # or at least try default params
-        # model = BankModel(Utility.get_default_params())
-        results = model.run()
-        print('finished test run with default params')
-
-    print('~---- treying to create exp')
-    exp = ap.Experiment(BankModel, parameters_exp)
-    print('created exp; ', exp)
-
-    #return exp
-    results = exp.run()
-    print('ran exp; ', results)
-    results.save()
-
-    fig = None 
-    model = None
-    if viz:
-        df = process_data(model)
-        print('viz data')
-        fig = viz_data(df) 
-        print('done')
-    return fig, model, results
-   
 # ------------Experiment
-def run_default_model(viz=False):
-    model = BankModel(Utility.get_default_params())
-    results = model.run()
-    print('sanity check, agent 0s txns', model.agents[0].txns)
-    #display.display('sanity check, agent 0s txns', model.agents[0].txns)
-    if viz:
-        df = process_data(model)
-        print('viz data')
-        fig = viz_data(df) 
-        print('done')
-    return fig, model, results
+    def run_default_model(viz=False):
+        model = BankModel(Utility.get_default_params())
+        results = model.run()
+        print('sanity check, agent 0s txns', model.agents[0].txns)
+        #display.display('sanity check, agent 0s txns', model.agents[0].txns)
+        if viz:
+            df = process_data_to_datetime(model)
+            fig = viz_txns_data(df) 
+        return fig, model, results
 
 # -------------------------------------------------------------
 if __name__ == '__main__':
@@ -553,5 +567,5 @@ if __name__ == '__main__':
     #model, results = run_default_model()
     df = process_data(model)
     print('viz data')
-    viz_data(df) 
+    viz_txns_data(df) 
     print('done')
