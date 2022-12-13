@@ -2,6 +2,7 @@
 import agentpy as ap
 import numpy as np
 from frozendict import frozendict
+import json
 
 # Visualization
 import seaborn as sns
@@ -18,9 +19,13 @@ import networkx as nx
 DEBUG = False
 #from IPython import display 
 
+ORNERY_KEYS = [ 'mean_num_txns', 
+              'mean_txn_amounts',
+              'agent_type_pair_probs', 'mean_txn_hrs',
+              'mean_txn_amounts', 'num_agents_per_type' ]
+
 
 class Utility(object):
-
     @staticmethod
     def setup_p_txns(total_steps):
         # Mean at 0
@@ -56,9 +61,9 @@ class Utility(object):
 
     @staticmethod
     def timestep_to_time(timestep):
-        parameters = Utility.get_default_params()
+        mins_per_step = Utility.get_default_params()['mins_per_step']
         date_and_time = datetime.datetime(2022, 10, 31, 0, 0,)
-        time_elapsed = timestep * (parameters['mins_per_step'])
+        time_elapsed = timestep * (mins_per_step)
         time_change = datetime.timedelta(minutes=time_elapsed)
         new_time = date_and_time + time_change
         return new_time
@@ -79,32 +84,23 @@ class Utility(object):
     # -- end TODO
     '''
     #--- HACK
+
+
     @staticmethod
-    def flatten_params(params):
+    def flatten_params(params):#, toflatten_keys=):
+        for key in ORNERY_KEYS: 
+            params[key] = json.dumps(params[key])
         # cannot use Exp uless we take out dictionaries, 
         # due to bug in how parametes for ea. exp are stored
         # flatten for experiment; unflatten at actual model
-        parameters = {
-            'mean_num_txns': MEAN_NUM_TXNS,
-            'mean_txn_amounts': MEAN_TXN_AMOUNTS,
-            'num_agents_per_type': NUM_AGENTS_PER_TYPE,
-            'agent_type_pair_probs': AGENT_TYPE_PAIR_PROBS,
-            'mean_txn_hrs': MEAN_TXN_HRS,
-            'mean_txn_amounts': MEAN_TXN_AMOUNTS,
-            'mean_txns': 4,  # avg num txns each agent makes
-            'starting_balance': 100,
-            'seed': 42,
-            'mins_per_step': MINS_PER_STEP,  # 1 hr
-            'steps': int(24 * (60/MINS_PER_STEP)),  # 24 hours * steps per hr
-        }
-        # NOTE: TMEPORARY: for debugging
-        #parameters['percent_sus'] = 0.01
-        return f_params 
+        return params 
 
     @staticmethod
-    def unflatten_params(f_params):
-        pass
-
+    def unflatten_params(params):
+        for key in ORNERY_KEYS:
+            print('unflattening key', key, params[key], 'of type', type(key))
+            params[key] = json.loads(params[key])
+        return params
 
     @staticmethod
     def get_default_params():
@@ -143,8 +139,6 @@ class Utility(object):
             'percent_sus':0.01
         }
         print(parameters)
-        # NOTE: TMEPORARY: for debugging
-        #parameters['percent_sus'] = 0.01
         return parameters
 
 
@@ -234,7 +228,11 @@ class BankAgent(ap.Agent):
 class BankModel(ap.Model):
 
     def setup(self):
+        print('unflattening')
+        self.p = Utility.unflatten_params(self.p)
+
         self.p_txns = Utility.setup_p_txns(self.p.steps)
+
         print('setting up')
         print('\n\n!------ self.p')
         print(self.p)
@@ -456,13 +454,13 @@ def network_viz(G):
     #nx.draw(G.nodes['type'] =  model.agents[i].type # todo: select by type?
     plt.show()
 
+
 # --- define parameters
 def run_custom_exp(viz=False): 
     NUM_AGENTS_PER_TYPE = {
         'normal': 1000,
         # 'suspicious': 10, 
     }
-
     # these are send, rcv pairs 
     AGENT_TYPE_PAIR_PROBS = {
         'normal': {
@@ -472,7 +470,6 @@ def run_custom_exp(viz=False):
             'self': 0.7,
             'normal': 0.3
         } }
-
     MEAN_TXN_HRS = {'normal': 14,
                     'suspicious': 22}
 
@@ -483,15 +480,13 @@ def run_custom_exp(viz=False):
                       'suspicious': 10 }
     MINS_PER_STEP = 15
 
-
     parameters_exp = {
-        'mean_num_txns': MEAN_NUM_TXNS,
-        'mean_txn_amounts': MEAN_TXN_AMOUNTS,
-        'agent_type_pair_probs': AGENT_TYPE_PAIR_PROBS,
-        'mean_txn_hrs': MEAN_TXN_HRS,
-        'mean_txn_amounts ': MEAN_TXN_AMOUNTS,
-        'num_agents_per_type': NUM_AGENTS_PER_TYPE,
-        'num_agents_per_type': 4, 
+        'mean_num_txns': frozendict(MEAN_NUM_TXNS),
+        'mean_txn_amounts': frozendict(MEAN_TXN_AMOUNTS),
+        'agent_type_pair_probs': frozendict(AGENT_TYPE_PAIR_PROBS),
+        'mean_txn_hrs': frozendict(MEAN_TXN_HRS),
+        'mean_txn_amounts ': frozendict(MEAN_TXN_AMOUNTS),
+        'num_agents_per_type': frozendict(NUM_AGENTS_PER_TYPE),
         'mean_txns': 4,  # avg num txns each agent makes
         'starting_balance': 100,
         'seed': 42,
@@ -501,16 +496,9 @@ def run_custom_exp(viz=False):
         'percent_sus': 1/100,
     }
 
-    print('pre frezze')
-    print(type(parameters_exp['MEAN_TXN_HRS']))
-    for param in [
-            'NUM_AGENTS_PER_TYPE', 
-            'AGENT_TYPE_PAIR_PROBS', 
-            'MEAN_TXN_HRS', 
-            'MEAN_TXN_AMOUNTS', 
-            'MEAN_NUM_TXNS']:
-        parameters_exp[param] = frozendict(parameters_exp[param])
-    print(type(parameters_exp[MEAN_TXN_HRS]))
+    parameters_exp = Utility.flatten_params(parameters_exp)
+        # print(parameters_exp[param])
+        # parameters_exp[param] = frozendict(parameters_exp[param])
 
     #-----------------------------------------------------------
     # --- NOTE: Setting experiment here! 
@@ -521,14 +509,18 @@ def run_custom_exp(viz=False):
     print('created sample; ', sample)
 
     # -- TEMP TEST 
-    #model = BankModel(parameters_multi)
-    #model = BankModel(Utility.get_default_params())
-    #results = model.run()
-    #print('finished test run with default params')
+    if True:
+        model = BankModel(parameters_exp)
+        # or at least try default params
+        # model = BankModel(Utility.get_default_params())
+        results = model.run()
+        print('finished test run with default params')
 
+    '''
+    print('~---- treying to create exp')
     exp = ap.Experiment(BankModel, parameters_exp)
-    #exp = ap.Experiment(BankModel, Utility.get_default_params())
-    #print('created exp; ', exp)
+    print('created exp; ', exp)
+    '''
 
     #return exp
     results = exp.run()
@@ -542,6 +534,7 @@ def run_custom_exp(viz=False):
         print('done')
 
     return fig, model, results
+
    
 # ------------Experiment
 def run_default_model(viz=False):
