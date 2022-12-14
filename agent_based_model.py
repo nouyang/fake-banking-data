@@ -510,6 +510,7 @@ class VizUtility(object):
         sns.reset_defaults()
 
         plt.style.use('bmh')     # switch to seaborn style
+        sns.set_style('ticks')
         sns.set_context('notebook')
         #sns.set_style('whitegrid')
 
@@ -524,8 +525,9 @@ class VizUtility(object):
         plt.rcParams.update(plt.rcParamsDefault)
         sns.reset_defaults()
 
-        plt.style.use('bmh')     # switch to seaborn style
-        sns.set_style('ticks')
+        #plt.style.use('bmh')     # switch to seaborn style
+        #sns.set_style('ticks')
+        sns.set_style('whitegrid')
         sns.set_context('notebook')
 
         fig, axes = plt.subplots(1,3, 
@@ -627,6 +629,32 @@ sns.set_style('whitegrid')
 sns.stripplot(data=txns, x='timestep', y='sender_type', hue='y_pred', edgecolor='k', linewidth=.2)#, palette='')
 fig.patch.set_facecolor('#F9F3DC')
 '''
+
+class ExportUtility():
+    @staticmethod
+    def export_data(model):
+        all_txns_by_agent = []
+        for agent in model.agents:
+            sends = agent.txns[agent.txns['txn_type'] == 'send']
+            all_txns_by_agent.append(sends)
+
+        df = pd.concat(all_txns_by_agent)
+        edges_list = df[['sender_id', 'receiver_id']].to_numpy()
+
+        # -- Save edges to csv
+        edges = pd.DataFrame(edges_list,
+            columns=['nx_node_A', 'nx_node_B'])j
+        edges.to_csv('nx_edges_list.csv', index=False)
+        #np.savetxt('nx_edges_list.csv', edges_list)
+
+        # -- Save tabular 
+        tabular_data = df[['timestep', 'timestep_to_time', 'sender_id', 'receiver_id', 'sender_type', 'amount'] ]
+        tabular_data.to_csv('txns_list.csv', index=False)
+
+        G=nx.DiGraph()
+        G.add_edges_from(edges_list)
+        return G
+
 
 class BankExpsCollection(object):
 # --- define parameters
