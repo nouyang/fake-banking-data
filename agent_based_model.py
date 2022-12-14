@@ -5,6 +5,7 @@ import numpy as np
 from frozendict import frozendict
 import json
 from matplotlib import rc
+import os
 
 # Visualization
 import seaborn as sns
@@ -24,14 +25,15 @@ from sklearn.inspection import DecisionBoundaryDisplay
 from sklearn import tree
 from scipy.stats import ks_2samp
 
+from sklearn.metrics import accuracy_score
 
 DEBUG = False
 #from IPython import display 
 
-ORNERY_KEYS = [ 'mean_num_txns', 
+ORNERY_KEYS = ['mean_num_txns', 
               'mean_txn_amounts',
               'agent_type_pair_probs', 'mean_txn_hrs',
-              'mean_txn_amounts', 'num_agents_per_type' ]
+              'mean_txn_amounts', 'num_agents_per_type']
 
 class Utility(object):
 
@@ -117,62 +119,6 @@ class Utility(object):
         return parameters_exp
 
 
-    def viz_and_export_network(model, viz=False):
-        all_txns_2 = []
-        for agent in model.agents:
-            sends = agent.txns[agent.txns['txn_type'] == 'send']
-            all_txns_2.append(sends)
-
-        df_2 = pd.concat(all_txns_2)
-        edges_list = df_2[['sender_id', 'receiver_id']].to_numpy()
-
-        G=nx.DiGraph()
-        G.add_edges_from(edges_list)
-        print('num nodes', G.number_of_nodes())
-        print('num edges', G.number_of_edges())
-
-        counts = df_2[['sender_type', 'receiver_type', 'sender_id']]
-        counts = counts.groupby('sender_id').value_counts()
-        counts = counts.reset_index()
-        counts = counts.rename(columns={0:'value_count'})
-
-        counts.groupby(['sender_type', 'receiver_type']).sum().apply(np.average)
-        # %% [markdown]
-        # # confirm that pairs parnters are distributed correctly
-        # normal-normal should be greater than normal-suspicious, etc.
-        pair_cts = {}
-        for s_type in counts.sender_type.unique():
-            pair_cts[s_type] = {}
-            for r_type in counts.receiver_type.unique():
-                tmp = counts[(counts.sender_type == s_type) & (counts.receiver_type == r_type)]
-                pair_cts[s_type][r_type] = np.average(tmp['value_count'])
-        pair_cts = pd.DataFrame(pair_cts)
-
-        df_2['timestep_to_time'] = df_2['timestep'].apply(Utility.timestep_to_time)
-
-        # -- Export data!
-        tabular_data = df_2[['timestep', 'timestep_to_time', 'sender_id',
-                             'receiver_id', 'sender_type', 'amount'] ]
-        tabular_data.to_csv('txns_list.csv', index=False)
-
-
-        # -- Export more data!
-        df_2[['sender_id',
-              'sender_type']].drop_duplicates('sender_id').to_csv('agents_list.csv',
-                                                                  index=False)
-
-        # -- Yet more data!
-        df_out_deg = pd.DataFrame(G.out_degree(), columns=['node_id', 'out_degree'])
-        df_in_deg = pd.DataFrame(G.in_degree(), columns=['node_id', 'in_degree'])
-        df_degs = pd.merge(df_in_deg, df_out_deg, on='node_id' )
-        df_degs.to_csv(
-            'tabular_graph_features.csv', index=False)
-
-        # -- Final data export!
-        df_2[['sender_id',
-              'sender_type']].drop_duplicates('sender_id').to_csv('agents_list.csv',
-                                                                  index=False)
-
     def network_viz(G, model):
         colors = []
         for i in range(len(G.nodes())):
@@ -186,7 +132,6 @@ class Utility(object):
         nx.draw(G, with_labels = True, node_color = colors, pos=nx.shell_layout(G))
         #nx.draw(G.nodes['type'] =  model.agents[i].type # todo: select by type?
         plt.show()
-
 
 
     @staticmethod
@@ -248,9 +193,9 @@ class Utility(object):
     '''
     #--- HACK
 
-    @staticmethod
-    def compare_distros():
-        ks_2samp(sender_info.txn_mean_time, sender_info.txn_mean_time)
+    #@staticmethod
+    #def compare_distros():
+        #ks_2samp(sender_info.txn_mean_time, sender_info.txn_mean_time)
 
     @staticmethod
     def flatten_params(params):#, toflatten_keys=):
@@ -508,7 +453,65 @@ def debug_printouts():
 '''
     
 class VizUtility(object): 
+
     @staticmethod
+    def format_and_viz_GMM(df_txns):
+        # -- Defensively clear, then set up style
+        plt.rcParams.update(plt.rcParamsDefault)
+        sns.reset_defaults()
+        sns.set_context('notebook')
+        sns.set_style('whitegrid')
+
+        # -- Plot data
+        fig, ax = plt.subplots()
+        sns.stripplot(data=df_txns, x='timestep', y='sender_type',
+                      hue='y_pred',)
+
+        # --- Format nicely
+        plt.title(
+            'Simulated Transaction Times by Sender Type\nPredicted vs Real Label with Gaussian Mixture Model')
+        plt.ylabel('True Sender Type')
+        plt.xlabel('Transaction Timestep')
+        plt.legend(title='Predicted Type', labels=['normal','suspicious'],
+                   loc='center right')
+        plt.tight_layout()
+
+        fig.patch.set_facecolor('#F9F3DC')
+        fig.savefig('fig1_GMM.pdf') # This is just to show the figure is still generated
+
+        return fig
+
+    @staticmethod
+    def format_and_viz_GMM_hist(df_txns):
+        # -- Defensively clear, then set up style
+        plt.rcParams.update(plt.rcParamsDefault)
+        sns.reset_defaults()
+        sns.set_context('notebook')
+        sns.set_style('whitegrid')
+
+        fig, (ax1, ax2) = plt.subplots(2,1, sharex=True)
+        df_txns['inverted_y_pred'] = 1 - df_txns['y_pred']
+        sns.histplot(data=df_txns, x='timestep', kde=True,
+                     hue='inverted_y_pred', hue_order=[0, 1],
+                     ax=ax1).set(title='Predicted')
+        sns.histplot(data=df_txns, x='timestep', kde=True, hue='y_true',
+                     hue_order=[1,0],
+                     ax=ax2).set(title='True')
+
+        ax2.legend([],[], frameon=False)
+        ax1.legend(title='Agent Type', labels=['normal','suspicious'])
+
+        plt.suptitle('Histogram of Transactions\n'
+                     '(Labelled by Gaussian Mixture Model)')
+        plt.xlabel('Transaction Timestep')
+        #plt.legend(title='Predicted Type', labels=['normal','suspicious'])
+        plt.tight_layout()
+
+        fig.patch.set_facecolor('#F9F3DC')
+        fig.savefig('fig2_GMM.pdf') # This is just to show the figure is still generated
+        return fig
+
+
     def viz_txns_data():
         pass
 
@@ -552,6 +555,8 @@ class VizUtility(object):
     def viz_fig_1(df1, df2, model1, model2):
         '''
         Input: df which has columns, send_txn_times, and num_txns
+        Note: This fxn needed because it's intensive to draw timestamps in
+        HH:MM directly
         '''
         #parameters = Utility.get_formatted_param_for_apExperiment(flatten=False)
         # TODO: this is a terrible way using lists to allow for not
@@ -592,6 +597,8 @@ class VizUtility(object):
     def viz_fig_2(models, txns):
         '''
         Input: df which has columns, send_txn_times, and num_txns
+        Note: Here we have to fit 3 plots side-by-side, so vary the tick
+        intervals compared to fig. 1 (also the figsize)
         '''
         #parameters = Utility.get_formatted_param_for_apExperiment(flatten=False)
         # TODO: this is a terrible way using lists to allow for not
@@ -643,35 +650,96 @@ fig.patch.set_facecolor('#F9F3DC')
 '''
 
 class ExportUtility():
+    # -- Note: fixed filenames ! 
     @staticmethod
     def export_data(model):
-        all_txns_by_agent = []
+        # -- collate by agent
+        # -- TODO: avoid iterate through dataframe... sorry...
+        all_txns = []
         for agent in model.agents:
             sends = agent.txns[agent.txns['txn_type'] == 'send']
-            all_txns_by_agent.append(sends)
+            all_txns.append(sends)
 
-        df = pd.concat(all_txns_by_agent)
-        edges_list = df[['sender_id', 'receiver_id']].to_numpy()
+        df_txns = pd.concat(all_txns)
+        df_txns['timestep_to_time'] = df_txns['timestep'].apply(
+            Utility.timestep_to_time)
 
-        # -- Save edges to csv
-        edges = pd.DataFrame(edges_list,
-            columns=['nx_node_A', 'nx_node_B'])
-
-
-        edges.to_csv('nx_edges_list.csv', index=False)
-        #np.savetxt('nx_edges_list.csv', edges_list)
-
-        # -- Save tabular 
-        tabular_data = df[['timestep', 'timestep_to_time', 'sender_id', 'receiver_id', 'sender_type', 'amount'] ]
+        # --------------------------------------------
+        # -- Export normal txns data (no sender type)
+        tabular_data = df_txns[[
+            'timestep', 'timestep_to_time', 'sender_id', 'receiver_id', 
+            'sender_type', 'amount'] ]
         tabular_data.to_csv('txns_list.csv', index=False)
 
-        G=nx.DiGraph()
+        # --------------------------------------------
+        # -- Export true sender identity  (sender type)
+        df_txns[['sender_id', 
+                 'sender_type'
+                ]].drop_duplicates('sender_id'
+                                  ).to_csv('agents_list.csv', index=False)
+
+        # --------------------------------------------
+        # -- export counts txns per agent
+        #counts = df_txns[['sender_type', 'receiver_type', 'sender_id']]
+        #counts = counts.groupby('sender_id').value_counts()
+        #counts = counts.reset_index()
+        #counts = counts.rename(columns={0:'value_count'})
+        
+        # --------------------------------------------
+        # -- Export edges (senders and receiver node ids)
+        edges_list = df_txns[['sender_id', 'receiver_id']].to_numpy()
+        df_edges = pd.DataFrame(edges_list,
+                             columns=['nx_node_A', 'nx_node_B'])
+        df_edges.to_csv('nx_edges_list.csv', index=False)
+
+        # --------------------------------------------
+        # -- Export in/out degree network data
+        # -- TODO: this code is a bit wordy, can be simplified 
+        G = nx.DiGraph()
         G.add_edges_from(edges_list)
+
+        _out_deg = pd.DataFrame(G.out_degree(), 
+                                  columns=['node_id', 'out_degree'])
+        _in_deg = pd.DataFrame(G.in_degree(), 
+                                 columns=['node_id', 'in_degree'])
+        df_degs = pd.merge(_in_deg, _out_deg, on='node_id' )
+        df_degs.to_csv(
+            'tabular_graph_features.csv', index=False)
+
+        # --------------------------------------------
+        # -- Export in/out degree network data
+        joblib.dump(G, 'graph.networkx_v2.8.4.joblib') 
         return G
 
 
 class BankExpsCollection(object):
 # --- define parameters
+    @staticmethod
+    def gen_data_for_outlier_classif(check_filename='txns_list.csv'):
+        if os.path.exists(check_filename):
+            print(f'file {check_filename} exists, not regenerating')
+        else:
+            # ------- First Run experiment  to generate data
+            # set params and then ... run the classifier 
+            param_changes = {
+                'mean_txn_hrs': {'normal': 12, 'suspicious': 22},
+                'num_agents_per_type': {'normal':1000}}
+            params = Utility.get_formatted_param_for_apExperiment(
+                param_changes)
+
+            params['percent_sus'] = 1/100
+            model = BankModel(params)
+            model.run()
+
+            # ------- Then export the data  
+            ExportUtility.export_data(model)
+
+
+    @staticmethod
+    def gen_fig_3():
+        # See Outlier Detection class
+        pass
+
     @staticmethod
     def gen_fig_1():
         # run it twice, with different mean txn times
@@ -731,7 +799,19 @@ class BankExpsCollection(object):
         fig = VizUtility.viz_fig_2(models, txns)
         return fig
 
-            #txns_df_a = Utility.process_data_to_datetime(modelA)
+
+    # ------------Experiment
+    # --- Old -- I think completely replaced by run_experiment(viz=False)
+    #def run_default_model(viz=False):
+    #    model = BankModel(Utility.get_default_params())
+    #    results = model.run()
+    #    print('sanity check, agent 0s txns', model.agents[0].txns)
+    #    #display.display('sanity check, agent 0s txns', model.agents[0].txns)
+    #    if viz:
+    #        df = Utility.process_data_to_datetime(model)
+    #        fig = VizUtility.viz_txns_data(df) 
+    #    return fig, model, results
+
     @staticmethod
     def run_experiment(viz=False):
         parameters_exp = Utility.get_formatted_param_for_apExperiment()
@@ -765,92 +845,45 @@ class BankExpsCollection(object):
             print('done')
         return fig, model, results
 
+
+# -- Note: no data generated in this class; use BankExp class for that
 class OutlierDetection():
-
-    def prepare_1d_data():
-        txns = pd.read_csv('./txns_list.csv')
-        # timestep to time is a column ! not a function.  TODO rename
-        txns['time'] = txns.timestep_to_time.apply(pd.to_datetime)
-        assert(txns.time.dtype = datetime64) # TODO
-
-        X = txns.time.to_numpy().reshape(-1,1)
-        X = txns.timestep.to_numpy().reshape(-1,1)
-        X.shape
-
-        txns['y_true'] = txns.sender_type.apply(lambda x: 1 if x=='suspicious' else 0)
-
+        #true_agent_labels = pd.read_csv('agents_list.csv')
+        #true_agent_labels.columns=['sender_id', 'true_sender_type']
+    @staticmethod
+    def create_1d_X_from_files():
+        # Create data to save
+        try:
+            df_txns = pd.read_csv('./txns_list.csv')
+        except:
+            print('File (txns_list.csv) not found; have you run' \
+                  'BankExpsCollection.gen_data_for_outlier_classif()' \
+                  'before this?')
+        # -- Rename truth values (txn labels) from string to integer 
+        df_txns['y_true'] = df_txns.sender_type.apply(
+            lambda x: 1 if x=='suspicious' else 0)
+        # -- Format datetimes # TODO:  timestep_to_time is a column not a fxn, fix this naming
+        df_txns['time'] = df_txns.timestep_to_time.apply(pd.to_datetime)
+        # assert(df_txns.time.dtype == np.datetime64) 
+        # -- Reshape for sklearn classifiers, which don't expect 1d data
+        X = df_txns.timestep.to_numpy().reshape(-1,1)
         # Xdeg2 = np.hstack((X, X**2))
-    def prepare_graph_data():
+        return X, df_txns
+    
+    def create_4d_X_from_files():
         edges = pd.read_csv('nx_edges_list.csv')
         node_degs = pd.read_csv('tabular_graph_features.csv')
+        #node_degs.columns=['sender_id', 'in_degree', 'out_degree']
+        return edges, node_degs
 
-        # groupby agent (instead of txns)
-        true_agent_labels = pd.read_csv('agents_list.csv')
-        true_agent_labels.columns=['sender_id', 'true_sender_type']
-        txns.groupby(['sender_id'])[['sender_id', 'timestep', 'y_pred', 'y_true']].value_counts()
-
-        txns_by_id = txns[['sender_id' , 'timestep', 'y_pred', 'y_true']]
-        txns_by_id = txns_by_id.pivot(index='sender_id', columns='timestep', values='y_true')
-        txns_by_id
-
-        txns_by_id['sum'] = txns_by_id.sum()
-        txns_by_id.reset_index()[['sender_id', 'sum']].fillna(0)
-        txns_by_id['agent_label'] = txns_by_id['sum'] >= 1
-        pred_by_agent = txns_by_id[['agent_label']] * 1
-
-        true_agent_labels['true_label'] = true_agent_labels['true_sender_type'] != 'normal'
-        # note that 0 = normal
-        true_agent_labels['true_label'] *= 1
-        true_agent_labels
-
-    def per_timestep():
-        sender_info['txns'] = None
-        sender_info['txn_mean_time'] = None
-# convert datatype to numpy array
-        sender_info.txns = sender_info.txns.astype(object)
-        display(sender_info.sample())
-
-        all_my_txns = []
-#for id in [1,2]:
-        for id in sender_info.sender_id:
-            my_txns = txns[txns.sender_id == id].timestep
-            #print(my_txns.to_list())
-            all_my_txns.append(my_txns.to_list())
-        sender_info['txns'] = pd.Series(all_my_txns)
-        display(sender_info.iloc[1])
-        sender_info['txn_mean_time'] = sender_info['txns'].apply(np.mean)
-#sender_info['label_by_mean_txn_time'] = 
-        sender_info
-
-    def viz_by_sender():
-        fig, ax = plt.subplots()
-        plt.set_xlim = [0,100]
-        sns.histplot(sender_info['txn_mean_time'], ax=ax, kde=True , bins=50)
-#sns.kdeplot(sender_info['txn_mean_time'], ax=ax)
-        plt.show()
-
-        plt.subplots()
-        plt.xlim = [0,100]
-        sns.histplot(txns.timestep, kde=True)
-        plt.show()
-
-
-        sender_info = sender_info.merge(true_agent_labels)
-
-        sns.stripplot(sender_info['txn_mean_time'],)#, type=)
-        sns.histplot(sender_info['txn_mean_time'])#, type=)
-
-        # plot with true heu
-        sns.histplot(data=sender_info, x='txn_mean_time', hue='true_sender_type')
-
-
+    '''
     def calc_in_out_deg():
-        node_degs.columns=['sender_id', 'in_degree', 'out_degree']
         sender_info = sender_info.merge(node_degs)
         sender_info['y_pred_type'] = sender_info.y_pred.apply(lambda x: 'normal' if x == 1 else 'suspicious')
         X = sender_info[['txn_mean_time' , 'in_degree', 'out_degree']]
 
         sns.pairplot(sender_info[['txn_mean_time', 'in_degree', 'out_degree']])
+
 
     def use_detection_decision_trees():
         clf = tree.DecisionTreeClassifier(max_depth=1)
@@ -858,34 +891,21 @@ class OutlierDetection():
         plt.figure(figsize=(5,5))
         tree.plot_tree(clf)
         #plt.show()
+        '''
 
-    # NOTE: gave up on having viz fxn separately
-    def use_gaussian_mixtures():
-        fig, ax = plt.subplots()
-        clf = mixture.GaussianMixture(n_components=2, covariance_type="full")
+    @staticmethod
+    def gen_gaussian_mixture_figs():
+        X, df_txns = OutlierDetection.create_1d_X_from_files()
+        # -- Train model
+        clf = mixture.GaussianMixture(n_components=2,
+                                      covariance_type="full", )
+                                      # random_state = 123)
         y_pred = clf.fit_predict(X)
-
-        txns['y_pred'] = y_pred
-        np.random.seed(123)
-        sns.stripplot(data=txns, x='timestep', y='sender_type', hue='y_pred', )
-        plt.title('Simulated Transaction Times by Sender Type\nPredicted vs Real Label with Gaussian Mixture Model')
-        plt.ylabel('Real Sender Type')
-        plt.xlabel('Transaction Timestep')
-        plt.legend(title='Predicted Type', labels=['normal','suspicious'])
-
-        fig.patch.set_facecolor('#F9F3DC')
-        plt.tight_layout()
-
-        #plt.show()
-        # fig, axes = plt.subplots(2,1)
-        # plt.suptitle('GMM')
-        # sns.histplot(data=txns, x='timestep', kde=True, hue='y_true', ax=axes[0])
-        # sns.histplot(data=txns, x='timestep', kde=True, hue='y_pred')
-        # fig.patch.set_facecolor('#F9F3DC')
-        # plt.tight_layout()
-        # plt.show()
-
-        return fig
+        # -- use dataframe to store y_pred for ease of seaborn plotting
+        df_txns['y_pred'] = y_pred
+        fig1 = VizUtility.format_and_viz_GMM(df_txns)
+        fig2 = VizUtility.format_and_viz_GMM_hist(df_txns)
+        return fig1, fig2
 
     def use_isolation_forest():
         np.random.seed(123)
@@ -911,19 +931,82 @@ class OutlierDetection():
         plt.show()
 
     def viz_decision_bounds():
+        pass
 
 
+        '''
+        def group_txns_by_agent():
+        if False:
+            print(
+                txns.groupby(['sender_id'])[
+                            ['sender_id', 'timestep', 'y_pred', 'y_true']
+                            ].value_counts()
+            )
 
-# ------------Experiment
-    def run_default_model(viz=False):
-        model = BankModel(Utility.get_default_params())
-        results = model.run()
-        print('sanity check, agent 0s txns', model.agents[0].txns)
-        #display.display('sanity check, agent 0s txns', model.agents[0].txns)
-        if viz:
-            df = Utility.process_data_to_datetime(model)
-            fig = VizUtility.viz_txns_data(df) 
-        return fig, model, results
+        if False:
+            # I guess this is for looking at how many mismatches there were
+            # for some given prediction
+            # See: y_pred
+            txns_by_id = txns[['sender_id' , 'timestep', 'y_pred', 'y_true']]
+            txns_by_id = txns_by_id.pivot(index='sender_id',
+                                          columns='timestep', values='y_true')
+            txns_by_id['sum'] = txns_by_id.sum()
+
+            txns_by_id.reset_index()[['sender_id', 'sum']].fillna(0)
+            txns_by_id['agent_label'] = txns_by_id['sum'] >= 1
+
+            pred_by_agent = txns_by_id[['agent_label']] * 1
+            errors = pred_by_agent.reset_index().merge(true_agent_labels)
+            errors['wrong_pred'] = errors.agent_label == errors.true_label
+            errors.wrong_pred.sum() / errors.shape[0]
+
+        # -- rename values from normal/suspicious to 0/1 respectively
+        true_agent_labels['true_label'] = \
+            true_agent_labels['true_sender_type'] != 'normal'
+        true_agent_labels['true_label'] *= 1
+        return true_agent_labels
+
+    def per_timestep():
+        sender_info['txns'] = None
+        sender_info['txn_mean_time'] = None
+# convert datatype to numpy array
+        sender_info.txns = sender_info.txns.astype(object)
+        display(sender_info.sample())
+
+        all_my_txns = []
+#for id in [1,2]:
+        for id in sender_info.sender_id:
+            my_txns = txns[txns.sender_id == id].timestep
+            #print(my_txns.to_list())
+            all_my_txns.append(my_txns.to_list())
+        sender_info['txns'] = pd.Series(all_my_txns)
+        display(sender_info.iloc[1])
+        sender_info['txn_mean_time'] = sender_info['txns'].apply(np.mean)
+        # sender_info['label_by_mean_txn_time'] = sender_info
+
+    def viz_by_sender():
+        fig, ax = plt.subplots()
+        plt.set_xlim = [0,100]
+        sns.histplot(sender_info['txn_mean_time'], ax=ax, kde=True , bins=50)
+#sns.kdeplot(sender_info['txn_mean_time'], ax=ax)
+        plt.show()
+
+        plt.subplots()
+        plt.xlim = [0,100]
+        sns.histplot(txns.timestep, kde=True)
+        plt.show()
+
+
+        sender_info = sender_info.merge(true_agent_labels)
+
+        sns.stripplot(sender_info['txn_mean_time'],)#, type=)
+        sns.histplot(sender_info['txn_mean_time'])#, type=)
+
+        # plot with true heu
+        sns.histplot(data=sender_info, x='txn_mean_time', hue='true_sender_type')
+    '''
+
+
 
 # -------------------------------------------------------------
 
