@@ -110,7 +110,7 @@ class Utility(object):
         return parameters_exp
 
 
-    def viz_and_export_network(model):
+    def viz_and_export_network(model, viz=False):
         all_txns_2 = []
         for agent in model.agents:
             sends = agent.txns[agent.txns['txn_type'] == 'send']
@@ -510,10 +510,6 @@ class VizUtility(object):
         sns.set_style('ticks')
         sns.set_context('notebook')
         #sns.set_style('whitegrid')
-
-        plt.rcParams.update({
-            "font.family": "CMU Serif"
-        })
         fig, (ax1, ax2) = plt.subplots(1,2,
                                         figsize = (8,4),
                                         sharey=True)
@@ -669,6 +665,7 @@ class BankExpsCollection(object):
     @staticmethod
     def gen_fig_1():
         # run it twice, with different mean txn times
+        # params A and B
 
         param_changes = {
             'mean_txn_hrs': {'normal': 12, 'suspicious': 22},
@@ -702,7 +699,12 @@ class BankExpsCollection(object):
     def gen_fig_2():
         # for figure 2, we hold number of agetns and mean hrs constant
         # but we vary the % suspicious
-        params = Utility.get_formatted_param_for_apExperiment()
+        param_changes = {
+            'mean_txn_hrs': {'normal': 12, 'suspicious': 22},
+            'num_agents_per_type': {'normal':10000}}
+        params = Utility.get_formatted_param_for_apExperiment(
+            param_changes)
+
         models = [] 
         txns = []
         #list_results = []
