@@ -26,6 +26,7 @@ from sklearn import tree
 from scipy.stats import ks_2samp
 
 from sklearn.metrics import accuracy_score
+from sklearn.metrics import precision_recall_fscore_support
 
 DEBUG = False
 #from IPython import display 
@@ -474,7 +475,8 @@ class VizUtility(object):
             'Predicted vs Real Label with Decision Tree')
         plt.ylabel('True Sender Type')
         plt.xlabel('Transaction Timestep')
-        plt.legend(title='Predicted Type', labels=['normal','suspicious'],
+        plt.legend(title='Predicted Type',
+                   #labels=['normal','suspicious'],
                    loc='center right')
         plt.tight_layout()
 
@@ -484,6 +486,65 @@ class VizUtility(object):
         return fig
 
 
+
+    @staticmethod
+    def format_and_viz_isolat(df_txns, title='Outlier Detection'):
+        # -- Defensively clear, then set up style
+        plt.rcParams.update(plt.rcParamsDefault)
+        sns.reset_defaults()
+        sns.set_context('notebook')
+        sns.set_style('whitegrid')
+
+        # -- Plot data
+        fig, ax = plt.subplots()
+        df_txns['normalized_y_pred'] = df_txns['y_pred'] == -1
+        sns.stripplot(data=df_txns, x='timestep', y='sender_type',
+                      hue='normalized_y_pred',)
+
+
+        # --- Format nicely
+        plt.title(
+            'Simulated Transaction Times by Sender Type\n' \
+            'Predicted vs Real Label with Isolation Forest') 
+        plt.ylabel('True Sender Type')
+        plt.xlabel('Transaction Timestep')
+        plt.legend(title='Predicted Type', labels=['normal','suspicious'],
+                   loc='center right')
+        plt.tight_layout()
+
+        fig.patch.set_facecolor('#F9F3DC')
+        fig.savefig('fig1_isolat.pdf') # This is just to show the figure is still generated
+        return fig
+
+    @staticmethod
+    def format_and_viz_isolat_hist(df_txns):
+        # -- Defensively clear, then set up style
+        plt.rcParams.update(plt.rcParamsDefault)
+        sns.reset_defaults()
+        sns.set_context('notebook')
+        sns.set_style('whitegrid')
+
+        fig, (ax1, ax2) = plt.subplots(2,1, sharex=True)
+        #  isolation forest is 1, and -1 for outlier
+        df_txns['normalized_y_pred'] = df_txns['y_pred'] == -1
+        sns.histplot(data=df_txns, x='timestep', kde=True,
+                     hue='normalized_y_pred', 
+                     ax=ax1).set(title='Predicted')
+        sns.histplot(data=df_txns, x='timestep', kde=True, hue='y_true',
+                     ax=ax2).set(title='True')
+
+        ax1.legend(title='Agent Type', labels=['suspicious','normal'])
+        ax2.legend([],[], frameon=False)
+
+        plt.suptitle('Histogram of Transactions\n'
+                     '(Labelled by Isolation Forest)')
+        plt.xlabel('Transaction Timestep')
+        #plt.legend(title='Predicted Type', labels=['normal','suspicious'])
+        plt.tight_layout()
+
+        fig.patch.set_facecolor('#F9F3DC')
+        fig.savefig('fig2_GMM.pdf') # This is just to show the figure is still generated
+        return fig
 
     @staticmethod
     def format_and_viz_GMM(df_txns, title='Outlier Detection'):
@@ -529,7 +590,7 @@ class VizUtility(object):
                      ax=ax2).set(title='True')
 
         ax2.legend([],[], frameon=False)
-        ax1.legend(title='Agent Type', labels=['normal','suspicious'])
+        ax1.legend(title='Agent Type', labels=['suspicious','normal'])
 
         plt.suptitle('Histogram of Transactions\n'
                      '(Labelled by Gaussian Mixture Model)')
@@ -945,7 +1006,6 @@ class OutlierDetection():
                                           )
         clf = clf.fit(X, df_txns.y_true)
         y_pred = clf.predict(X)
-
         # -- Defensively clear, then set up style
         plt.rcParams.update(plt.rcParamsDefault)
         sns.reset_defaults()
@@ -960,41 +1020,35 @@ class OutlierDetection():
                              class_names=['Normal', 'Suspicious'],
                              #filled=True, 
                              rounded=False)
-        fig1.savefig('fig1_dt.pdf') # This is just to show the figure is still generated
+        plt.title('Value = # agents in each class')
+        plt.savefig('fig1_dt.pdf') # This is just to show the figure is still generated
+        plt.show() #--- OTHERWISE DOES NOT SHOW :( TODO FIX THIS
 
         df_txns['y_pred'] = y_pred
+
         fig2 = VizUtility.format_and_viz_tree(df_txns)
+
+        from sklearn.tree import export_text
+        r = export_text(clf, feature_names=['agent type'],
+                        show_weights=True)
+        print(r)
+        print('r')
+
+
         return (fig1, fig2)
 
 
     def gen_isolation_figs():
         X, df_txns = OutlierDetection.create_1d_X_from_files()
-        print(df_txns.y_true.sample(4))
-        clf = tree.DecisionTreeClassifier(max_depth=1, 
-                                          random_state=123,
-                                          )
-        clf = clf.fit(X, df_txns.y_true)
-        y_pred = clf.predict(X)
-
-        # -- Defensively clear, then set up style
-        plt.rcParams.update(plt.rcParamsDefault)
-        sns.reset_defaults()
-        sns.set_context('notebook')
-        #sns.set_style('darkgrid')
-
-        plt.subplots(figsize=(5,5))
-        fig1 = tree.plot_tree(clf,
-                             feature_names=['Txn Timestep'],
-                             label='all',
-                             impurity=False,
-                             class_names=['Normal', 'Suspicious'],
-                             #filled=True, 
-                             rounded=False)
-        fig1.savefig('fig1_dt.pdf') # This is just to show the figure is still generated
-
+        # -- Train model
+        clf = IsolationForest(contamination=0.1,
+                              random_state = 123).fit(X)
+        y_pred = clf.fit_predict(X)
+        # -- use dataframe to store y_pred for ease of seaborn plotting
         df_txns['y_pred'] = y_pred
-        fig2 = VizUtility.format_and_viz_tree(df_txns)
-        return (fig1, fig2)
+        fig1 = VizUtility.format_and_viz_isolat(df_txns)
+        fig2 = VizUtility.format_and_viz_isolat_hist(df_txns)
+        return fig1, fig2
 
     '''
     def use_isolation_forest():
