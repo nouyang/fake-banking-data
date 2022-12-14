@@ -499,7 +499,8 @@ class VizUtility(object):
     def format_fig_1():
         sns.reset_defaults()
         fig, (ax1, ax2) = plt.subplots(1,2,
-                                        figsize = (8,4))
+                                        figsize = (8,4),
+                                        sharey=True)
         sns.set_context('notebook')
         sns.set_style('whitegrid')
         fig.patch.set_facecolor('#F9F3DC')
@@ -511,46 +512,41 @@ class VizUtility(object):
         '''
         Input: df which has columns, send_txn_times, and num_txns
         '''
-        fig, (ax1, ax2) = VizUtility.format_fig_1()
         #parameters = Utility.get_formatted_param_for_apExperiment(flatten=False)
 
-        # -- 1
-        sns.lineplot(x='send_txn_times', y='num_txns', data=df1, ax=ax1,
-                     markers=True,  marker='o')
+        # TODO: this is a terrible way using lists to allow for not
+        # dupcliating chart code, refactor eventually
 
-        parameters = model1.p
-        ax1.set(xlabel='Time (24 Hour)', ylabel='# of Transactions',
-            title=f"Mean txn time, Normal: {parameters['mean_txn_hrs']['normal']}:00,"
-            f" Suspicious: {parameters['mean_txn_hrs']['suspicious']}:00"
-            )
-        ax1.set_xticklabels(ax1.get_xticks(), rotation = 40)
-        ax1.xaxis.set_major_locator(mdates.HourLocator(interval=2))
-        ax1.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
-        ax1.xaxis.set_major_formatter(DateFormatter("%H:%M"))
+        fig, (ax1, ax2) = VizUtility.format_fig_1()
+        df = [df1, df2]
+        hrs = [model1.p['mean_txn_hrs'], model2.p['mean_txn_hrs']]
+        models = [model1, model2]
+        axes = [ax1, ax2]
 
-        # -- 2
-        sns.lineplot(x='send_txn_times', y='num_txns', data=df2, ax=ax2,
-            markers=True,  marker='o')
+        for i, (model, ax) in enumerate( zip(models, axes) ):
+            sns.lineplot(x='send_txn_times', y='num_txns', data=df[i],
+                         ax=ax, markers=True,  marker='o')
 
-        parameters = model2.p
-        ax2.set(xlabel='Time (24 Hour)', ylabel='# of Transactions',
-            title=f"Mean txn time, Normal: {parameters['mean_txn_hrs']['normal']}:00,"
-            f" Suspicious: {parameters['mean_txn_hrs']['suspicious']}:00"
-            )
-        ax2.set_xticklabels(ax2.get_xticks(), rotation = 40)
-        ax2.xaxis.set_major_locator(mdates.HourLocator(interval=2))
-        ax2.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
-        ax2.xaxis.set_major_formatter(DateFormatter("%H:%M"))
+            ax.set(xlabel='Time (24 Hour)', ylabel='# of Transactions',
+                title=\
+                   f"Mean txn time, "
+                   rf"Normal: $\bf{hrs[i]['normal']}$00,"
+                   f" Suspicious: {hrs[i]['suspicious']}00"
+                )
+            ax.set_xticklabels(ax.get_xticks(), rotation = 40)
+            ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+            ax.xaxis.set_minor_locator(mdates.HourLocator(interval=1))
+            ax.xaxis.set_major_formatter(DateFormatter("%H:%M"))
 
+        num_agents = model1.p['num_agents_per_type']
         plt.suptitle(r"$\bf{Simulated\ Transactions\ by\ Time–of–Day}$"
-            f"\n# Accounts, Normal: {parameters['num_agents_per_type']['normal']}, "
-            f"Suspicious: {parameters['num_agents_per_type']['suspicious']}")
+            f"\n# Accounts, Normal: {num_agents['normal']}, "
+            f"Suspicious: {num_agents['suspicious']}")
 
         plt.tight_layout()
         fig.savefig('plot.pdf') # This is just to show the figure is still generated
         #plt.show()
         return fig
-
 
 
 '''
@@ -590,7 +586,6 @@ class BankExpsCollection(object):
         modelB = BankModel(paramsB)
         results = modelB.run()
         txns_df_b = Utility.process_data_to_datetime(modelB)
-
         #fig = viz_txns_data(df) 
         fig = VizUtility.viz_fig_1(txns_df_a, txns_df_b, modelA, modelB)
         return fig
