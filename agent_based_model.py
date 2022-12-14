@@ -31,9 +31,9 @@ DEBUG = False
 #from IPython import display 
 
 ORNERY_KEYS = ['mean_num_txns', 
-              'mean_txn_amounts',
-              'agent_type_pair_probs', 'mean_txn_hrs',
-              'mean_txn_amounts', 'num_agents_per_type']
+               'mean_txn_amounts',
+               'agent_type_pair_probs', 'mean_txn_hrs',
+               'mean_txn_amounts', 'num_agents_per_type']
 
 class Utility(object):
 
@@ -103,7 +103,7 @@ class Utility(object):
             'percent_sus': 1/100,
         }
 
-        if param_changes!= None:
+        if param_changes is not None:
             print('\n\n!-- param changes', param_changes)
             for key, value in param_changes.items():
                 print(f'{key}: modifying {parameters_exp[key]}->{value}')
@@ -453,9 +453,40 @@ def debug_printouts():
 '''
     
 class VizUtility(object): 
+#    @staticmethod
+#   def format_and_viz_isolation
 
     @staticmethod
-    def format_and_viz_GMM(df_txns):
+    def format_and_viz_tree(df_txns, title='Outlier Detection'):
+        # -- Defensively clear, then set up style
+        plt.rcParams.update(plt.rcParamsDefault)
+        sns.reset_defaults()
+        sns.set_context('notebook')
+        sns.set_style('whitegrid')
+
+        # -- Plot data
+        fig, ax = plt.subplots()
+        sns.stripplot(data=df_txns, x='timestep', y='sender_type',
+                      hue='y_pred',)
+        # --- Format nicely
+        plt.title(
+            'Simulated Transaction Times by Sender Type\n' \
+            'Predicted vs Real Label with Decision Tree')
+        plt.ylabel('True Sender Type')
+        plt.xlabel('Transaction Timestep')
+        plt.legend(title='Predicted Type', labels=['normal','suspicious'],
+                   loc='center right')
+        plt.tight_layout()
+
+        fig.patch.set_facecolor('#F9F3DC')
+        fig.savefig('fig2_dt.pdf') # This is just to show the figure is still generated
+
+        return fig
+
+
+
+    @staticmethod
+    def format_and_viz_GMM(df_txns, title='Outlier Detection'):
         # -- Defensively clear, then set up style
         plt.rcParams.update(plt.rcParamsDefault)
         sns.reset_defaults()
@@ -492,10 +523,9 @@ class VizUtility(object):
         fig, (ax1, ax2) = plt.subplots(2,1, sharex=True)
         df_txns['inverted_y_pred'] = 1 - df_txns['y_pred']
         sns.histplot(data=df_txns, x='timestep', kde=True,
-                     hue='inverted_y_pred', hue_order=[0, 1],
+                     hue='y_pred', 
                      ax=ax1).set(title='Predicted')
         sns.histplot(data=df_txns, x='timestep', kde=True, hue='y_true',
-                     hue_order=[1,0],
                      ax=ax2).set(title='True')
 
         ax2.legend([],[], frameon=False)
@@ -855,7 +885,7 @@ class OutlierDetection():
         # Create data to save
         try:
             df_txns = pd.read_csv('./txns_list.csv')
-        except:
+        except FileNotFoundError:
             print('File (txns_list.csv) not found; have you run' \
                   'BankExpsCollection.gen_data_for_outlier_classif()' \
                   'before this?')
@@ -898,8 +928,8 @@ class OutlierDetection():
         X, df_txns = OutlierDetection.create_1d_X_from_files()
         # -- Train model
         clf = mixture.GaussianMixture(n_components=2,
-                                      covariance_type="full", )
-                                      # random_state = 123)
+                                      covariance_type="full",
+                                      random_state = 123)
         y_pred = clf.fit_predict(X)
         # -- use dataframe to store y_pred for ease of seaborn plotting
         df_txns['y_pred'] = y_pred
@@ -907,6 +937,66 @@ class OutlierDetection():
         fig2 = VizUtility.format_and_viz_GMM_hist(df_txns)
         return fig1, fig2
 
+    def gen_tree_figs():
+        X, df_txns = OutlierDetection.create_1d_X_from_files()
+        print(df_txns.y_true.sample(4))
+        clf = tree.DecisionTreeClassifier(max_depth=1, 
+                                          random_state=123,
+                                          )
+        clf = clf.fit(X, df_txns.y_true)
+        y_pred = clf.predict(X)
+
+        # -- Defensively clear, then set up style
+        plt.rcParams.update(plt.rcParamsDefault)
+        sns.reset_defaults()
+        sns.set_context('notebook')
+        #sns.set_style('darkgrid')
+
+        plt.subplots(figsize=(5,5))
+        fig1 = tree.plot_tree(clf,
+                             feature_names=['Txn Timestep'],
+                             label='all',
+                             impurity=False,
+                             class_names=['Normal', 'Suspicious'],
+                             #filled=True, 
+                             rounded=False)
+        fig1.savefig('fig1_dt.pdf') # This is just to show the figure is still generated
+
+        df_txns['y_pred'] = y_pred
+        fig2 = VizUtility.format_and_viz_tree(df_txns)
+        return (fig1, fig2)
+
+
+    def gen_isolation_figs():
+        X, df_txns = OutlierDetection.create_1d_X_from_files()
+        print(df_txns.y_true.sample(4))
+        clf = tree.DecisionTreeClassifier(max_depth=1, 
+                                          random_state=123,
+                                          )
+        clf = clf.fit(X, df_txns.y_true)
+        y_pred = clf.predict(X)
+
+        # -- Defensively clear, then set up style
+        plt.rcParams.update(plt.rcParamsDefault)
+        sns.reset_defaults()
+        sns.set_context('notebook')
+        #sns.set_style('darkgrid')
+
+        plt.subplots(figsize=(5,5))
+        fig1 = tree.plot_tree(clf,
+                             feature_names=['Txn Timestep'],
+                             label='all',
+                             impurity=False,
+                             class_names=['Normal', 'Suspicious'],
+                             #filled=True, 
+                             rounded=False)
+        fig1.savefig('fig1_dt.pdf') # This is just to show the figure is still generated
+
+        df_txns['y_pred'] = y_pred
+        fig2 = VizUtility.format_and_viz_tree(df_txns)
+        return (fig1, fig2)
+
+    '''
     def use_isolation_forest():
         np.random.seed(123)
         clf = IsolationForest(random_state=0, contamination=0.1).fit(Xdeg2)
@@ -929,6 +1019,7 @@ class OutlierDetection():
         plt.title('Predicted vs Real Label with Isolation Forest\n Including In/Out degree features')
 
         plt.show()
+        '''
 
     def viz_decision_bounds():
         pass
