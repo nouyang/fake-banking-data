@@ -18,6 +18,13 @@ from matplotlib.dates import DateFormatter
 import matplotlib.dates as mdates
 import networkx as nx
 
+from sklearn import mixture
+from sklearn.ensemble import IsolationForest
+from sklearn.inspection import DecisionBoundaryDisplay
+from sklearn import tree
+from scipy.stats import ks_2samp
+
+
 DEBUG = False
 #from IPython import display 
 
@@ -241,6 +248,9 @@ class Utility(object):
     '''
     #--- HACK
 
+    @staticmethod
+    def compare_distros():
+        ks_2samp(sender_info.txn_mean_time, sender_info.txn_mean_time)
 
     @staticmethod
     def flatten_params(params):#, toflatten_keys=):
@@ -746,7 +756,6 @@ class BankExpsCollection(object):
         joblib.dump(results,
                     f"./results/{results.info['time_stamp'][:19]}.joblib")
         # results.save() # 'TypeError: Object of type Values is not JSON serializable'
-
         fig = None 
         model = None
         if viz:
@@ -755,7 +764,155 @@ class BankExpsCollection(object):
             fig = VizUtility.viz_txns_data(df) 
             print('done')
         return fig, model, results
-       
+
+class OutlierDetection():
+
+    def prepare_1d_data():
+        txns = pd.read_csv('./txns_list.csv')
+        # timestep to time is a column ! not a function.  TODO rename
+        txns['time'] = txns.timestep_to_time.apply(pd.to_datetime)
+        assert(txns.time.dtype = datetime64) # TODO
+
+        X = txns.time.to_numpy().reshape(-1,1)
+        X = txns.timestep.to_numpy().reshape(-1,1)
+        X.shape
+
+        txns['y_true'] = txns.sender_type.apply(lambda x: 1 if x=='suspicious' else 0)
+
+        # Xdeg2 = np.hstack((X, X**2))
+    def prepare_graph_data():
+        edges = pd.read_csv('nx_edges_list.csv')
+        node_degs = pd.read_csv('tabular_graph_features.csv')
+
+        # groupby agent (instead of txns)
+        true_agent_labels = pd.read_csv('agents_list.csv')
+        true_agent_labels.columns=['sender_id', 'true_sender_type']
+        txns.groupby(['sender_id'])[['sender_id', 'timestep', 'y_pred', 'y_true']].value_counts()
+
+        txns_by_id = txns[['sender_id' , 'timestep', 'y_pred', 'y_true']]
+        txns_by_id = txns_by_id.pivot(index='sender_id', columns='timestep', values='y_true')
+        txns_by_id
+
+        txns_by_id['sum'] = txns_by_id.sum()
+        txns_by_id.reset_index()[['sender_id', 'sum']].fillna(0)
+        txns_by_id['agent_label'] = txns_by_id['sum'] >= 1
+        pred_by_agent = txns_by_id[['agent_label']] * 1
+
+        true_agent_labels['true_label'] = true_agent_labels['true_sender_type'] != 'normal'
+        # note that 0 = normal
+        true_agent_labels['true_label'] *= 1
+        true_agent_labels
+
+    def per_timestep():
+        sender_info['txns'] = None
+        sender_info['txn_mean_time'] = None
+# convert datatype to numpy array
+        sender_info.txns = sender_info.txns.astype(object)
+        display(sender_info.sample())
+
+        all_my_txns = []
+#for id in [1,2]:
+        for id in sender_info.sender_id:
+            my_txns = txns[txns.sender_id == id].timestep
+            #print(my_txns.to_list())
+            all_my_txns.append(my_txns.to_list())
+        sender_info['txns'] = pd.Series(all_my_txns)
+        display(sender_info.iloc[1])
+        sender_info['txn_mean_time'] = sender_info['txns'].apply(np.mean)
+#sender_info['label_by_mean_txn_time'] = 
+        sender_info
+
+    def viz_by_sender():
+        fig, ax = plt.subplots()
+        plt.set_xlim = [0,100]
+        sns.histplot(sender_info['txn_mean_time'], ax=ax, kde=True , bins=50)
+#sns.kdeplot(sender_info['txn_mean_time'], ax=ax)
+        plt.show()
+
+        plt.subplots()
+        plt.xlim = [0,100]
+        sns.histplot(txns.timestep, kde=True)
+        plt.show()
+
+
+        sender_info = sender_info.merge(true_agent_labels)
+
+        sns.stripplot(sender_info['txn_mean_time'],)#, type=)
+        sns.histplot(sender_info['txn_mean_time'])#, type=)
+
+        # plot with true heu
+        sns.histplot(data=sender_info, x='txn_mean_time', hue='true_sender_type')
+
+
+    def calc_in_out_deg():
+        node_degs.columns=['sender_id', 'in_degree', 'out_degree']
+        sender_info = sender_info.merge(node_degs)
+        sender_info['y_pred_type'] = sender_info.y_pred.apply(lambda x: 'normal' if x == 1 else 'suspicious')
+        X = sender_info[['txn_mean_time' , 'in_degree', 'out_degree']]
+
+        sns.pairplot(sender_info[['txn_mean_time', 'in_degree', 'out_degree']])
+
+    def use_detection_decision_trees():
+        clf = tree.DecisionTreeClassifier(max_depth=1)
+        clf = clf.fit(X, txns.y_true)
+        plt.figure(figsize=(5,5))
+        tree.plot_tree(clf)
+        #plt.show()
+
+    # NOTE: gave up on having viz fxn separately
+    def use_gaussian_mixtures():
+        fig, ax = plt.subplots()
+        clf = mixture.GaussianMixture(n_components=2, covariance_type="full")
+        y_pred = clf.fit_predict(X)
+
+        txns['y_pred'] = y_pred
+        np.random.seed(123)
+        sns.stripplot(data=txns, x='timestep', y='sender_type', hue='y_pred', )
+        plt.title('Simulated Transaction Times by Sender Type\nPredicted vs Real Label with Gaussian Mixture Model')
+        plt.ylabel('Real Sender Type')
+        plt.xlabel('Transaction Timestep')
+        plt.legend(title='Predicted Type', labels=['normal','suspicious'])
+
+        fig.patch.set_facecolor('#F9F3DC')
+        plt.tight_layout()
+
+        #plt.show()
+        # fig, axes = plt.subplots(2,1)
+        # plt.suptitle('GMM')
+        # sns.histplot(data=txns, x='timestep', kde=True, hue='y_true', ax=axes[0])
+        # sns.histplot(data=txns, x='timestep', kde=True, hue='y_pred')
+        # fig.patch.set_facecolor('#F9F3DC')
+        # plt.tight_layout()
+        # plt.show()
+
+        return fig
+
+    def use_isolation_forest():
+        np.random.seed(123)
+        clf = IsolationForest(random_state=0, contamination=0.1).fit(Xdeg2)
+        y_pred = clf.predict(Xdeg2)
+#y_pred = IsolationForest(random_state=0, contamination=0.1).fit_predict(X)
+
+        txns['y_pred'] = y_pred
+        null_acc = accuracy_score(txns.y_true, np.zeros(txns.y_true.shape[0])) # ytrue, ypred # predict all 0s (majority class)
+        null_acc = accuracy_score(txns.y_true, np.zeros(txns.y_true.shape[0])) # ytrue, ypred # predict all 0s (majority class)
+        acc = accuracy_score(txns.y_true, txns.y_pred==-1 )  # outlier is -1, wjhich is 1 in the other labeling
+        sns.stripplot(data=txns, x='timestep', y='sender_type', hue='y_pred', )
+        plt.title(f'Predicted vs Real Label with Isolation Forest Model\n10% contamination, Label -1 = suspicious\n acc = {acc*100:.2f}%, null acc = {null_acc*100:.2f}%')
+        #plt.show()
+
+        sender_info['y_pred'] = y_pred
+        colors = ['r' if label==0 else 'b' for label in y_pred]
+        #-- plot disaggregated by true label
+        plt.subplots()
+        sns.stripplot(data=sender_info, x='txn_mean_time', y='true_sender_type', hue='y_pred_type', )
+        plt.title('Predicted vs Real Label with Isolation Forest\n Including In/Out degree features')
+
+        plt.show()
+
+    def viz_decision_bounds():
+
+
 
 # ------------Experiment
     def run_default_model(viz=False):
