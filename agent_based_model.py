@@ -4,6 +4,7 @@ import joblib
 import numpy as np
 from frozendict import frozendict
 import json
+from matplotlib import rc
 
 # Visualization
 import seaborn as sns
@@ -24,9 +25,6 @@ ORNERY_KEYS = [ 'mean_num_txns',
               'mean_txn_amounts',
               'agent_type_pair_probs', 'mean_txn_hrs',
               'mean_txn_amounts', 'num_agents_per_type' ]
-
-sns.set_theme()
-sns.set_style('darkgrid')
 
 class Utility(object):
 
@@ -508,12 +506,14 @@ class VizUtility(object):
     def format_fig_1():
         plt.rcParams.update(plt.rcParamsDefault)
         sns.reset_defaults()
-
         plt.style.use('bmh')     # switch to seaborn style
         sns.set_style('ticks')
         sns.set_context('notebook')
         #sns.set_style('whitegrid')
 
+        plt.rcParams.update({
+            "font.family": "CMU Serif"
+        })
         fig, (ax1, ax2) = plt.subplots(1,2,
                                         figsize = (8,4),
                                         sharey=True)
@@ -529,6 +529,12 @@ class VizUtility(object):
         #sns.set_style('ticks')
         sns.set_style('whitegrid')
         sns.set_context('notebook')
+
+        #rc('font',**{'family':'serif','serif':['CMU Serif']})
+        #rc('font',**{'family':'sans serif','serif':['CMU Sans Serif']})
+        #plt.rcParams.update({
+            #"font.family": "serif"
+        #})
 
         fig, axes = plt.subplots(1,3, 
                                  figsize = (8,4), sharey=True)
@@ -643,7 +649,9 @@ class ExportUtility():
 
         # -- Save edges to csv
         edges = pd.DataFrame(edges_list,
-            columns=['nx_node_A', 'nx_node_B'])j
+            columns=['nx_node_A', 'nx_node_B'])
+
+
         edges.to_csv('nx_edges_list.csv', index=False)
         #np.savetxt('nx_edges_list.csv', edges_list)
 
