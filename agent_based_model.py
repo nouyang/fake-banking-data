@@ -25,6 +25,8 @@ ORNERY_KEYS = [ 'mean_num_txns',
               'agent_type_pair_probs', 'mean_txn_hrs',
               'mean_txn_amounts', 'num_agents_per_type' ]
 
+sns.set_theme()
+sns.set_style('darkgrid')
 
 class Utility(object):
 
@@ -32,6 +34,9 @@ class Utility(object):
     def process_data_to_datetime(model):
         all_txns = []
         # TODO: refactor so apply to enitre df at once
+        # since only need... to... create the df all_txns
+        # we can do that in the model, not as a utility method.
+        # change to resample_timedata(df_all_txns)  
         for agent in model.agents:
             for timestamp in agent.send_txn_times:
                 all_txns.append(Utility.timestep_to_time(timestamp))
@@ -67,7 +72,7 @@ class Utility(object):
                 'self': 0.7,
                 'normal': 0.3
             } }
-        MEAN_TXN_HRS = {'normal': 14,
+        MEAN_TXN_HRS = {'normal': 15,
                         'suspicious': 22}
         MEAN_TXN_AMOUNTS = {'normal': 250,
                             'suspicious': 50}  # this shoudl actually vary...
@@ -496,27 +501,47 @@ def debug_printouts():
     
 class VizUtility(object): 
     @staticmethod
+    def viz_txns_data():
+        pass
+
+    @staticmethod
     def format_fig_1():
+        plt.rcParams.update(plt.rcParamsDefault)
         sns.reset_defaults()
+
+        plt.style.use('bmh')     # switch to seaborn style
+        sns.set_context('notebook')
+        #sns.set_style('whitegrid')
+
         fig, (ax1, ax2) = plt.subplots(1,2,
                                         figsize = (8,4),
                                         sharey=True)
-        sns.set_context('notebook')
-        sns.set_style('whitegrid')
         fig.patch.set_facecolor('#F9F3DC')
         return fig, (ax1, ax2)
                 
+    @staticmethod
+    def format_fig_2():
+        plt.rcParams.update(plt.rcParamsDefault)
+        sns.reset_defaults()
 
+        plt.style.use('bmh')     # switch to seaborn style
+        sns.set_style('ticks')
+        sns.set_context('notebook')
+
+        fig, axes = plt.subplots(1,3, 
+                                 figsize = (8,4), sharey=True)
+
+        fig.patch.set_facecolor('#F9F3DC')
+        return fig, axes 
+                
     @staticmethod
     def viz_fig_1(df1, df2, model1, model2):
         '''
         Input: df which has columns, send_txn_times, and num_txns
         '''
         #parameters = Utility.get_formatted_param_for_apExperiment(flatten=False)
-
         # TODO: this is a terrible way using lists to allow for not
         # dupcliating chart code, refactor eventually
-
         fig, (ax1, ax2) = VizUtility.format_fig_1()
         df = [df1, df2]
         hrs = [model1.p['mean_txn_hrs'], model2.p['mean_txn_hrs']]
@@ -539,12 +564,53 @@ class VizUtility(object):
             ax.xaxis.set_major_formatter(DateFormatter("%H:%M"))
 
         num_agents = model1.p['num_agents_per_type']
+        print('num agents', num_agents, model2.p['num_agents_per_type'])
         plt.suptitle(r"$\bf{Simulated\ Transactions\ by\ Time–of–Day}$"
             f"\n# Accounts, Normal: {num_agents['normal']}, "
             f"Suspicious: {num_agents['suspicious']}")
 
         plt.tight_layout()
-        fig.savefig('plot.pdf') # This is just to show the figure is still generated
+        fig.savefig('fig_1_plot.pdf') # This is just to show the figure is still generated
+        #plt.show()
+        return fig
+
+    @staticmethod
+    def viz_fig_2(models, txns):
+        '''
+        Input: df which has columns, send_txn_times, and num_txns
+        '''
+        #parameters = Utility.get_formatted_param_for_apExperiment(flatten=False)
+        # TODO: this is a terrible way using lists to allow for not
+        # dupcliating chart code, refactor eventually
+        fig, axes = VizUtility.format_fig_2()
+        percents = [model.p['percent_sus'] for model in models]
+        num_normal = models[0].p['num_agents_per_type']['normal']
+
+        for i in range(len(models)):
+            ax = axes[i]
+            percent_sus = percents[i]
+
+            sns.lineplot(x='send_txn_times', y='num_txns', data=txns[i],
+                         ax=ax, markers=True,  marker='o')
+
+            ax.set(xlabel='Time', ylabel='# of Transactions',
+                title=\
+                   f"{percent_sus*100}% = "
+                   f"{int(percent_sus*num_normal)} Suspic. Accts."
+                )
+            ax.set_xticklabels(ax.get_xticks(), rotation = 40)
+            ax.xaxis.set_major_locator(mdates.HourLocator(interval=4))
+            ax.xaxis.set_minor_locator(mdates.HourLocator(interval=2))
+            ax.xaxis.set_major_formatter(DateFormatter("%H:%M"))
+#            ax.tick_params(axis='both', which='both', labelbottom=True)
+
+        plt.suptitle(
+            r"$\bf{Simulated\ Transactions\ by\ Time–of–Day}$"\
+            f"\n# Accounts, Normal: {num_normal}")
+
+        plt.tight_layout()
+        fig.subplots_adjust(wspace=0.05, hspace=0)
+        fig.savefig('fig_2_plot.pdf') # This is just to show the figure is still generated
         #plt.show()
         return fig
 
@@ -567,7 +633,10 @@ class BankExpsCollection(object):
     @staticmethod
     def gen_fig_1():
         # run it twice, with different mean txn times
-        param_changes = {'mean_txn_hrs': {'normal': 12, 'suspicious': 22}}
+
+        param_changes = {
+            'mean_txn_hrs': {'normal': 12, 'suspicious': 22},
+            'num_agents_per_type': {'normal':10000}}
         paramsA = Utility.get_formatted_param_for_apExperiment(
             param_changes)
         paramsA['percent_sus'] = 1/50 
@@ -579,7 +648,8 @@ class BankExpsCollection(object):
         # cannot modify param directly.
         # have to reformat, since we're changing a parameters that is a
         # dictionary which breaks the Experiment code...
-        param_changes = {'mean_txn_hrs': {'normal': 17, 'suspicious': 22}}
+        param_changes = {'mean_txn_hrs': {'normal': 17, 'suspicious': 22},
+            'num_agents_per_type': {'normal':10000}}
         paramsB = Utility.get_formatted_param_for_apExperiment(
             param_changes)
         paramsB['percent_sus'] = 1/50
@@ -590,7 +660,30 @@ class BankExpsCollection(object):
         fig = VizUtility.viz_fig_1(txns_df_a, txns_df_b, modelA, modelB)
         return fig
 
+    # fig 2: txns as vary by % suspicious
 
+    @staticmethod
+    def gen_fig_2():
+        # for figure 2, we hold number of agetns and mean hrs constant
+        # but we vary the % suspicious
+        params = Utility.get_formatted_param_for_apExperiment()
+        models = [] 
+        txns = []
+        #list_results = []
+        for percent in [1/10, 1/100, 1/1000]:
+            params['percent_sus'] = percent
+            model = BankModel(params)
+            # results = model.run()
+            # results.save()
+            model.run()
+            models.append(model)
+            #list_results.append(results)
+            txns.append(Utility.process_data_to_datetime(model))
+
+        fig = VizUtility.viz_fig_2(models, txns)
+        return fig
+
+            #txns_df_a = Utility.process_data_to_datetime(modelA)
     @staticmethod
     def run_experiment(viz=False):
         parameters_exp = Utility.get_formatted_param_for_apExperiment()
@@ -619,9 +712,9 @@ class BankExpsCollection(object):
         fig = None 
         model = None
         if viz:
-            df = process_data_to_datetime(model)
+            df = Utility.process_data_to_datetime(model)
             print('viz data')
-            fig = viz_txns_data(df) 
+            fig = VizUtility.viz_txns_data(df) 
             print('done')
         return fig, model, results
        
@@ -634,15 +727,15 @@ class BankExpsCollection(object):
         #display.display('sanity check, agent 0s txns', model.agents[0].txns)
         if viz:
             df = Utility.process_data_to_datetime(model)
-            fig = viz_txns_data(df) 
+            fig = VizUtility.viz_txns_data(df) 
         return fig, model, results
 
 # -------------------------------------------------------------
 
 if __name__ == '__main__':
-    run_exp()
-    #model, results = run_default_model()
-    df = process_data(model)
+    BankExpsCollection.run_exp()
+    model, results = Utility.run_default_model()
+    df = Utility.process_data_to_datetime(model)
     print('viz data')
-    viz_txns_data(df) 
+    VizUtility.viz_txns_data(df) 
     print('done')
