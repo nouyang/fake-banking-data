@@ -761,6 +761,8 @@ class ExportUtility():
         df_txns = pd.concat(all_txns)
         df_txns['timestep_to_time'] = df_txns['timestep'].apply(
             Utility.timestep_to_time)
+        # TODO: there seems to be mismatch in len between number of agents
+        # here vsin the other data files below
 
         # --------------------------------------------
         # -- Export normal txns data (no sender type)
@@ -771,10 +773,15 @@ class ExportUtility():
 
         # --------------------------------------------
         # -- Export true sender identity  (sender type)
-        df_txns[['sender_id', 
+        labelled_agents = df_txns[['sender_id', 
                  'sender_type'
-                ]].drop_duplicates('sender_id'
-                                  ).to_csv('agents_list.csv', index=False)
+                ]].drop_duplicates(['sender_id', 'sender_type']
+                                  )
+        print('agents labels shape', labelled_agents.shape)
+        labelled_agents.to_csv('agents_list.csv', index=False)
+        print('vs txn agents', df_txns.sender_id.unique().shape)
+
+        
 
         # --------------------------------------------
         # -- export counts txns per agent
@@ -1005,7 +1012,6 @@ class OutlierDetection():
         return clf, fig1, fig2
 
     def gen_tree_figs(max_depth=1):
-        '''
         # -- fig 1 defined here
         X, df_txns = OutlierDetection.create_1d_X_from_files()
         print(df_txns.y_true.sample(4))
@@ -1035,7 +1041,6 @@ class OutlierDetection():
         plt.savefig('fig1_dt.pdf') # This is just to show the figure is still generated
         if True:
             plt.show() #--- OTHERWISE DOES NOT SHOW :( TODO FIX THIS
-        '''
 
         # -- inspect jitter plot
         df_txns['y_pred'] = y_pred
