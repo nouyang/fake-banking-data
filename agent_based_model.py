@@ -470,26 +470,27 @@ class VizUtility(object):
         sns.set_style('whitegrid')
 
         # -- Plot data
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots() # TODO: fix figsize to reasonable vals
         sns.stripplot(data=df_txns, x='timestep', y='sender_type',
                       hue='y_pred',)
+        print(df_txns.sender_type.sample())
+
         # --- Format nicely
         plt.title(
             'Simulated Transaction Times by Sender Type\n' \
             'Predicted vs Real Label with Decision Tree')
         plt.ylabel('True Sender Type')
         plt.xlabel('Transaction Timestep')
+        #ax.legend(title='Predicted Type', labels=['normal','suspicious'])
         plt.legend(title='Predicted Type',
-                   #labels=['normal','suspicious'],
-                   loc='center right')
+                   labels=['normal','suspicious'],
+                  loc='center right')
         plt.tight_layout()
 
         fig.patch.set_facecolor('#F9F3DC')
         fig.savefig('fig2_dt.pdf') # This is just to show the figure is still generated
 
         return fig
-
-
 
     @staticmethod
     def format_and_viz_isolat(df_txns, title='Outlier Detection'):
@@ -945,6 +946,7 @@ class BankExpsCollection(object):
 class OutlierDetection():
         #true_agent_labels = pd.read_csv('agents_list.csv')
         #true_agent_labels.columns=['sender_id', 'true_sender_type']
+
     @staticmethod
     def create_1d_X_from_files():
         # Create data to save
@@ -979,19 +981,14 @@ class OutlierDetection():
 
         sns.pairplot(sender_info[['txn_mean_time', 'in_degree', 'out_degree']])
 
-
-    def use_detection_decision_trees():
-        clf = tree.DecisionTreeClassifier(max_depth=1)
-        clf = clf.fit(X, txns.y_true)
-        plt.figure(figsize=(5,5))
-        tree.plot_tree(clf)
-        #plt.show()
         '''
 
+    # -- Unsupervised
     @staticmethod
     def gen_gaussian_mixture_figs():
         X, df_txns = OutlierDetection.create_1d_X_from_files()
         # -- Train model
+
         clf = mixture.GaussianMixture(n_components=2,
                                       covariance_type="full",
                                       random_state = 123)
@@ -1005,18 +1002,21 @@ class OutlierDetection():
     def gen_tree_figs():
         X, df_txns = OutlierDetection.create_1d_X_from_files()
         print(df_txns.y_true.sample(4))
-        clf = tree.DecisionTreeClassifier(max_depth=1, 
+        # -- Classify with decision tree
+        clf = tree.DecisionTreeClassifier(max_depth=2,
                                           random_state=123,
                                           )
         clf = clf.fit(X, df_txns.y_true)
         y_pred = clf.predict(X)
+
         # -- Defensively clear, then set up style
         plt.rcParams.update(plt.rcParamsDefault)
         sns.reset_defaults()
         sns.set_context('notebook')
         #sns.set_style('darkgrid')
 
-        plt.subplots(figsize=(5,5))
+        plt.subplots(figsize=(10,10))
+        # -- plot the tree
         fig1 = tree.plot_tree(clf,
                              feature_names=['Txn Timestep'],
                              label='all',
@@ -1026,19 +1026,21 @@ class OutlierDetection():
                              rounded=False)
         plt.title('Decision Tree\n(Value = # agents in each class)')
         plt.savefig('fig1_dt.pdf') # This is just to show the figure is still generated
-        plt.show() #--- OTHERWISE DOES NOT SHOW :( TODO FIX THIS
+        #plt.show() #--- OTHERWISE DOES NOT SHOW :( TODO FIX THIS
 
+        # -- inspect jitter plot
         df_txns['y_pred'] = y_pred
-
         fig2 = VizUtility.format_and_viz_tree(df_txns)
 
+        # -- print text version of the decision tree
         r = export_text(clf, feature_names=['agent type'],
                         show_weights=True)
-        print(r)
+        print('\n---- Printout of decision tree in text')
 
         return (fig1, fig2)
 
 
+    # -- unsupervised
     def gen_isolation_figs():
         X, df_txns = OutlierDetection.create_1d_X_from_files()
         # -- Train model
