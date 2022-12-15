@@ -25,6 +25,8 @@ from sklearn.inspection import DecisionBoundaryDisplay
 from sklearn import tree
 from scipy.stats import ks_2samp
 
+from sklearn.tree import export_text
+
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import precision_recall_fscore_support
 
@@ -82,18 +84,19 @@ class Utility(object):
             } }
         MEAN_TXN_HRS = {'normal': 15,
                         'suspicious': 22}
-        MEAN_TXN_AMOUNTS = {'normal': 250,
-                            'suspicious': 50}  # this shoudl actually vary...
+
+        #MEAN_TXN_AMOUNTS = {'normal': 250,
+        #                    'suspicious': 50}  # this shoudl actually vary...
         MEAN_NUM_TXNS = { 'normal': 4, 
                           'suspicious': 10 }
         MINS_PER_STEP = 15
 
         parameters_exp = {
             'mean_num_txns': frozendict(MEAN_NUM_TXNS),
-            'mean_txn_amounts': frozendict(MEAN_TXN_AMOUNTS),
+            #'mean_txn_amounts': frozendict(MEAN_TXN_AMOUNTS),
             'agent_type_pair_probs': frozendict(AGENT_TYPE_PAIR_PROBS),
             'mean_txn_hrs': frozendict(MEAN_TXN_HRS),
-            'mean_txn_amounts ': frozendict(MEAN_TXN_AMOUNTS),
+            #'mean_txn_amounts ': frozendict(MEAN_TXN_AMOUNTS),
             'num_agents_per_type': frozendict(NUM_AGENTS_PER_TYPE),
             'mean_txns': 4,  # avg num txns each agent makes
             'starting_balance': 100,
@@ -228,6 +231,7 @@ class Utility(object):
                 'self': 0.7,
                 'normal': 0.3
             } }
+
         MEAN_TXN_HRS = {'normal': 14,
                         'suspicious': 22}
         MEAN_TXN_AMOUNTS = {'normal': 250,
@@ -238,7 +242,7 @@ class Utility(object):
 
         parameters = {
             'mean_num_txns': MEAN_NUM_TXNS,
-            'mean_txn_amounts': MEAN_TXN_AMOUNTS,
+            #'mean_txn_amounts': MEAN_TXN_AMOUNTS,
             'num_agents_per_type': NUM_AGENTS_PER_TYPE,
             'agent_type_pair_probs': AGENT_TYPE_PAIR_PROBS,
             'mean_txn_hrs': MEAN_TXN_HRS,
@@ -270,7 +274,7 @@ class BankAgent(ap.Agent):
         self.txns = None
         self.txns_list = []
         # -- parmeters for amt $$$
-        self.txn_amt_rng = None
+        self.txn_amt_rng = None #!
         self.acct_balance = None
         self.txn_amts = None
 
@@ -1020,7 +1024,7 @@ class OutlierDetection():
                              class_names=['Normal', 'Suspicious'],
                              #filled=True, 
                              rounded=False)
-        plt.title('Value = # agents in each class')
+        plt.title('Decision Tree\n(Value = # agents in each class)')
         plt.savefig('fig1_dt.pdf') # This is just to show the figure is still generated
         plt.show() #--- OTHERWISE DOES NOT SHOW :( TODO FIX THIS
 
@@ -1028,12 +1032,9 @@ class OutlierDetection():
 
         fig2 = VizUtility.format_and_viz_tree(df_txns)
 
-        from sklearn.tree import export_text
         r = export_text(clf, feature_names=['agent type'],
                         show_weights=True)
         print(r)
-        print('r')
-
 
         return (fig1, fig2)
 
@@ -1118,6 +1119,7 @@ class OutlierDetection():
         sender_info.txns = sender_info.txns.astype(object)
         display(sender_info.sample())
 
+
         all_my_txns = []
 #for id in [1,2]:
         for id in sender_info.sender_id:
@@ -1141,7 +1143,6 @@ class OutlierDetection():
         sns.histplot(txns.timestep, kde=True)
         plt.show()
 
-
         sender_info = sender_info.merge(true_agent_labels)
 
         sns.stripplot(sender_info['txn_mean_time'],)#, type=)
@@ -1150,8 +1151,6 @@ class OutlierDetection():
         # plot with true heu
         sns.histplot(data=sender_info, x='txn_mean_time', hue='true_sender_type')
     '''
-
-
 
 # -------------------------------------------------------------
 
