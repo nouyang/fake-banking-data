@@ -19,8 +19,8 @@ from matplotlib.dates import DateFormatter
 import matplotlib.dates as mdates
 import networkx as nx
 
-from sklearn import mixture
 from sklearn.ensemble import IsolationForest
+from sklearn import mixture
 from sklearn.inspection import DecisionBoundaryDisplay
 from sklearn import tree
 from scipy.stats import ks_2samp
@@ -85,18 +85,17 @@ class Utility(object):
         MEAN_TXN_HRS = {'normal': 15,
                         'suspicious': 22}
 
-        #MEAN_TXN_AMOUNTS = {'normal': 250,
-        #                    'suspicious': 50}  # this shoudl actually vary...
+        MEAN_TXN_AMOUNTS = {'normal': 250,
+                            'suspicious': 50}  # this shoudl actually vary...
         MEAN_NUM_TXNS = { 'normal': 4, 
                           'suspicious': 10 }
         MINS_PER_STEP = 15
 
         parameters_exp = {
             'mean_num_txns': frozendict(MEAN_NUM_TXNS),
-            #'mean_txn_amounts': frozendict(MEAN_TXN_AMOUNTS),
+            'mean_txn_amounts': frozendict(MEAN_TXN_AMOUNTS),
             'agent_type_pair_probs': frozendict(AGENT_TYPE_PAIR_PROBS),
             'mean_txn_hrs': frozendict(MEAN_TXN_HRS),
-            #'mean_txn_amounts ': frozendict(MEAN_TXN_AMOUNTS),
             'num_agents_per_type': frozendict(NUM_AGENTS_PER_TYPE),
             'mean_txns': 4,  # avg num txns each agent makes
             'starting_balance': 100,
@@ -463,6 +462,7 @@ class VizUtility(object):
 
     @staticmethod
     def format_and_viz_tree(df_txns, title='Outlier Detection'):
+        # -- this is one of two trees
         # -- Defensively clear, then set up style
         plt.rcParams.update(plt.rcParamsDefault)
         sns.reset_defaults()
@@ -472,7 +472,8 @@ class VizUtility(object):
         # -- Plot data
         fig, ax = plt.subplots() # TODO: fix figsize to reasonable vals
         sns.stripplot(data=df_txns, x='timestep', y='sender_type',
-                      hue='y_pred',)
+                      hue='y_pred',
+                      edgecolor='k', linewidth=.2)
         print(df_txns.sender_type.sample())
 
         # --- Format nicely
@@ -504,8 +505,8 @@ class VizUtility(object):
         fig, ax = plt.subplots()
         df_txns['normalized_y_pred'] = df_txns['y_pred'] == -1
         sns.stripplot(data=df_txns, x='timestep', y='sender_type',
-                      hue='normalized_y_pred',)
-
+                      hue='normalized_y_pred',
+                      edgecolor='k', linewidth=.2)
 
         # --- Format nicely
         plt.title(
@@ -562,7 +563,8 @@ class VizUtility(object):
         # -- Plot data
         fig, ax = plt.subplots()
         sns.stripplot(data=df_txns, x='timestep', y='sender_type',
-                      hue='y_pred',)
+                      hue='y_pred',
+                      edgecolor='k', linewidth=.2)
 
         # --- Format nicely
         plt.title(
@@ -801,7 +803,6 @@ class ExportUtility():
         df_degs = pd.merge(_in_deg, _out_deg, on='node_id' )
         df_degs.to_csv(
             'tabular_graph_features.csv', index=False)
-
         # --------------------------------------------
         # -- Export in/out degree network data
         joblib.dump(G, 'graph.networkx_v2.8.4.joblib') 
@@ -949,6 +950,7 @@ class OutlierDetection():
 
     @staticmethod
     def create_1d_X_from_files():
+        # TODO: save paremtesr of data also
         # Create data to save
         try:
             df_txns = pd.read_csv('./txns_list.csv')
@@ -968,6 +970,9 @@ class OutlierDetection():
         return X, df_txns
     
     def create_4d_X_from_files():
+        true_agent_labels = pd.read_csv('agents_list.csv')
+        true_agent_labels.columns=['sender_id', 'true_sender_type']
+
         edges = pd.read_csv('nx_edges_list.csv')
         node_degs = pd.read_csv('tabular_graph_features.csv')
         #node_degs.columns=['sender_id', 'in_degree', 'out_degree']
@@ -997,13 +1002,15 @@ class OutlierDetection():
         df_txns['y_pred'] = y_pred
         fig1 = VizUtility.format_and_viz_GMM(df_txns)
         fig2 = VizUtility.format_and_viz_GMM_hist(df_txns)
-        return fig1, fig2
+        return clf, fig1, fig2
 
-    def gen_tree_figs():
+    def gen_tree_figs(max_depth=1):
+        '''
+        # -- fig 1 defined here
         X, df_txns = OutlierDetection.create_1d_X_from_files()
         print(df_txns.y_true.sample(4))
         # -- Classify with decision tree
-        clf = tree.DecisionTreeClassifier(max_depth=2,
+        clf = tree.DecisionTreeClassifier(max_depth=max_depth,
                                           random_state=123,
                                           )
         clf = clf.fit(X, df_txns.y_true)
@@ -1026,16 +1033,19 @@ class OutlierDetection():
                              rounded=False)
         plt.title('Decision Tree\n(Value = # agents in each class)')
         plt.savefig('fig1_dt.pdf') # This is just to show the figure is still generated
-        #plt.show() #--- OTHERWISE DOES NOT SHOW :( TODO FIX THIS
+        if True:
+            plt.show() #--- OTHERWISE DOES NOT SHOW :( TODO FIX THIS
+        '''
 
         # -- inspect jitter plot
         df_txns['y_pred'] = y_pred
         fig2 = VizUtility.format_and_viz_tree(df_txns)
 
         # -- print text version of the decision tree
-        r = export_text(clf, feature_names=['agent type'],
+        text_tree = export_text(clf, feature_names=['agent type'],
                         show_weights=True)
         print('\n---- Printout of decision tree in text')
+        print(text_tree)
 
         return (fig1, fig2)
 
